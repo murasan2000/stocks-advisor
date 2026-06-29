@@ -31,14 +31,28 @@ class PortfolioData(TypedDict):
     as_of_date: str
 
 
-class MarketStructure(TypedDict):
-    """MarketStructureAgent の出力（マーケット構造分析）。"""
+class IndexQuote(TypedDict):
+    """Market Agent が取得する指数・為替・金利の 1 項目。"""
 
-    usd_jpy: float
-    nikkei225: float
-    topix: float
+    symbol: str  # Yahoo Finance シンボル（例: "^N225"）
+    name: str  # 表示名（例: "日経平均"）
+    category: str  # "index" | "fx" | "rate" | "volatility"
+    price: float
+    change_pct: float  # 前日比（%）
+
+
+class MarketOverview(TypedDict):
+    """MarketAgent の出力（市場全体の概況）。
+
+    設計書の Market Agent に対応。主要指数・為替・金利を横断的に取得し、
+    リスクオン/オフのスコアと ★1〜5 の総合評価を付与する。
+    """
+
+    indices: list[IndexQuote]
     market_trend: str  # "強気" | "中立" | "弱気"
-    macro_score: float  # -1.0 〜 1.0
+    macro_score: float  # -1.0 〜 1.0（リスクオン/オフ）
+    rating: int  # 1〜5（★の数。総合評価）
+    as_of: str  # 取得日（YYYY-MM-DD）
     summary: str
 
 
@@ -158,7 +172,7 @@ class MultiAgentState(TypedDict):
 
     query: str
     portfolio_data: PortfolioData | None
-    market_structure: MarketStructure | None
+    market: MarketOverview | None
     screening_result: ScreeningResult | None
     market_data: dict[str, MarketData] | None
     technical_analysis: dict[str, TechnicalAnalysis] | None
@@ -167,3 +181,23 @@ class MultiAgentState(TypedDict):
     final_suggestion: SuggestionResult | None
     final_answer: str | None
     errors: Annotated[list[AgentError], operator.add]
+
+
+def empty_state(query: str = "") -> MultiAgentState:
+    """全フィールドを初期化した共有状態を生成する。
+
+    パイプライン実行・単体エージェント実行（市場サマリー API など）で共用する。
+    """
+    return MultiAgentState(
+        query=query,
+        portfolio_data=None,
+        market=None,
+        screening_result=None,
+        market_data=None,
+        technical_analysis=None,
+        fundamental_analysis=None,
+        risk_assessment=None,
+        final_suggestion=None,
+        final_answer=None,
+        errors=[],
+    )

@@ -19,10 +19,10 @@ export const AGENT_OPTIONS = [
     description: '楽天証券CSVから保有銘柄・評価損益を読み取ります。',
   },
   {
-    key: 'market_structure',
-    label: 'マーケット構造分析',
+    key: 'market',
+    label: '市場分析',
     description:
-      '日経平均・TOPIX・為替から当日の市場構造（リスクオン/オフ）をLLMで要約します。',
+      '日経平均・TOPIX・S&P500・NASDAQ・NYダウ・VIX・ドル円・米金利から市場全体の概況（リスクオン/オフ）を★評価付きで要約します。',
   },
   {
     key: 'screening',
@@ -84,6 +84,25 @@ export interface Job {
 export interface CreateJobResponse {
   job_id: string
   status: JobStatus
+}
+
+/** 市場サマリーの指数・為替・金利 1 項目（GET /market/overview） */
+export interface IndexQuote {
+  symbol: string
+  name: string
+  category: 'index' | 'fx' | 'rate' | 'volatility'
+  price: number
+  change_pct: number
+}
+
+/** Market Agent の出力（市場全体の概況） */
+export interface MarketOverview {
+  indices: IndexQuote[]
+  market_trend: string
+  macro_score: number
+  rating: number
+  as_of: string
+  summary: string
 }
 
 export const STATUS_LABELS: Record<JobStatus, string> = {

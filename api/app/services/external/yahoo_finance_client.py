@@ -57,10 +57,23 @@ class YahooFinanceClient:
                 self._cache[filename] = json.load(f)
         return self._cache[filename]
 
+    def _load_optional(self, filename: str) -> dict[str, Any]:
+        """モックJSONを読み込む。ファイルが無い場合は空辞書を返す。
+
+        data/mock/ は別管理コンポーネントで未配置のことがあるため、
+        欠損時はクラッシュさせず決定論的合成データへフォールバックさせる。
+        """
+        try:
+            data: dict[str, Any] = self._load(filename)
+            return data
+        except FileNotFoundError:
+            self._cache[filename] = {}
+            return {}
+
     async def get_quote(self, symbol: str) -> Quote:
         """リアルタイム株価を取得する。"""
         self._ensure_mock()
-        quotes: dict[str, Any] = self._load("quotes.json")
+        quotes = self._load_optional("quotes.json")
         if symbol in quotes:
             return Quote.model_validate(quotes[symbol])
         return self._synthesize_quote(symbol)
@@ -80,7 +93,7 @@ class YahooFinanceClient:
     async def get_asset_profile(self, symbol: str) -> AssetProfile:
         """企業基本情報を取得する。"""
         self._ensure_mock()
-        profiles: dict[str, Any] = self._load("profiles.json")
+        profiles = self._load_optional("profiles.json")
         if symbol in profiles:
             return AssetProfile.model_validate({"symbol": symbol, **profiles[symbol]})
         return AssetProfile(
@@ -94,7 +107,7 @@ class YahooFinanceClient:
     async def get_news(self, symbol: str) -> list[NewsItem]:
         """銘柄関連ニュースを取得する。モックにない銘柄は汎用ニュースを返す。"""
         self._ensure_mock()
-        news: dict[str, Any] = self._load("news.json")
+        news = self._load_optional("news.json")
         items = news.get(symbol, news.get("default", []))
         return [NewsItem.model_validate(item) for item in items]
 

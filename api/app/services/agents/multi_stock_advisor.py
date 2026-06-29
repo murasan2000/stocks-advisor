@@ -29,7 +29,7 @@ from app.services.agents.graph.agent_selection import (
     build_topology,
 )
 from app.services.tracing.langfuse import get_langfuse_callback
-from app.types.agents.multi_agent import MultiAgentState
+from app.types.agents.multi_agent import MultiAgentState, empty_state
 
 __all__ = ["AGENT_SEQUENCE", "MultiStockAdvisor"]
 
@@ -59,9 +59,9 @@ def _summarize(node: str, update: dict[str, Any]) -> str:
             f"評価損益 {data['total_unrealized_pnl']:+,.0f}円"
             f"（{data['total_unrealized_pnl_pct']:+.1f}%）"
         )
-    if node == "market_structure":
-        analysis = update.get("market_structure")
-        return analysis["summary"] if analysis else "マーケット構造の取得に失敗しました"
+    if node == "market":
+        analysis = update.get("market")
+        return analysis["summary"] if analysis else "市場概況の取得に失敗しました"
     if node == "screening":
         result = update.get("screening_result")
         return result["summary"] if result else "スクリーニングに失敗しました"
@@ -134,19 +134,7 @@ class MultiStockAdvisor:
         resolved_set = set(resolved)
         parents, children, roots, _terminals = build_topology(resolved)
 
-        initial_state: MultiAgentState = {
-            "query": query,
-            "portfolio_data": None,
-            "market_structure": None,
-            "screening_result": None,
-            "market_data": None,
-            "technical_analysis": None,
-            "fundamental_analysis": None,
-            "risk_assessment": None,
-            "final_suggestion": None,
-            "final_answer": None,
-            "errors": [],
-        }
+        initial_state: MultiAgentState = empty_state(query)
 
         started: set[str] = set()
         done: set[str] = set()

@@ -9,7 +9,7 @@ from app.services.analysis.risk_metrics import (
     max_drawdown,
     sharpe_ratio,
 )
-from app.services.external.yahoo_finance_client import YahooFinanceClient
+from app.services.external.providers import get_market_data_provider
 from app.types.agents.multi_agent import (
     MultiAgentState,
     RiskAssessment,
@@ -45,7 +45,7 @@ async def risk_node(state: MultiAgentState) -> dict[str, Any]:
 
     benchmark_closes: list[float] = []
     try:
-        bench_chart = await YahooFinanceClient().get_chart("^N225")
+        bench_chart = await get_market_data_provider().get_chart("^N225")
         benchmark_closes = [p.close for p in bench_chart.prices]
     except Exception as exc:
         logger.warning("benchmark chart fetch failed: %s", exc)

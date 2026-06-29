@@ -88,8 +88,8 @@ def _build_context(state: MultiAgentState) -> str:
             f"（{portfolio['total_unrealized_pnl_pct']:+.1f}%）"
         )
 
-    if macro := state.get("market_structure"):
-        parts.append(f"【マーケット構造】\n{macro['summary']}")
+    if macro := state.get("market"):
+        parts.append(f"【市場概況】\n{macro['summary']}")
 
     if screening := state.get("screening_result"):
         parts.append(f"【スクリーニング】\n{screening['summary']}")
@@ -126,8 +126,8 @@ def _fallback_answer(
 ) -> str:
     """LLM 呼び出し失敗時のルールベース回答。"""
     lines = ["## 分析結果（自動生成）", ""]
-    if macro := state.get("market_structure"):
-        lines += [f"**マーケット構造**: {macro['summary']}", ""]
+    if macro := state.get("market"):
+        lines += [f"**市場概況**: {macro['summary']}", ""]
     if suggestions:
         lines.append("| 銘柄 | 判断 | 根拠 |")
         lines.append("|---|---|---|")

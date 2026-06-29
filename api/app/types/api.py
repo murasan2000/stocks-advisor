@@ -23,3 +23,24 @@ class HealthResponse(BaseModel):
     llm_provider: str
     version: str
 
+
+class IndexQuoteOut(BaseModel):
+    """市場サマリーの指数・為替・金利 1 項目。"""
+
+    symbol: str
+    name: str
+    category: str  # "index" | "fx" | "rate" | "volatility"
+    price: float
+    change_pct: float
+
+
+class MarketOverviewResponse(BaseModel):
+    """GET /api/v1/market/overview のレスポンス（Market Agent の出力）。"""
+
+    indices: list[IndexQuoteOut]
+    market_trend: str
+    macro_score: float
+    rating: int  # 1〜5（★の数）
+    as_of: str
+    summary: str
+

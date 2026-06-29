@@ -10,7 +10,7 @@
 依存関係（データ依存・ハード前提）::
 
     portfolio   ← なし
-    macro       ← なし
+    market      ← なし
     screening   ← なし（query から銘柄を確定。portfolio があれば利用）
     market_data ← screening
     technical   ← market_data
@@ -29,18 +29,18 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.services.agents.graph.nodes.fundamental import fundamental_multi_node
 from app.services.agents.graph.nodes.market_data import market_data_node
-from app.services.agents.graph.nodes.market_structure import market_structure_node
 from app.services.agents.graph.nodes.portfolio import portfolio_node
 from app.services.agents.graph.nodes.risk import risk_node
 from app.services.agents.graph.nodes.screening import screening_node
 from app.services.agents.graph.nodes.suggestion import suggestion_node
 from app.services.agents.graph.nodes.technical import technical_multi_node
+from app.services.agents.market_agent import market_node
 from app.types.agents.multi_agent import MultiAgentState
 
 # 実行順（トポロジカルソートの基準順序）と表示ラベル
 AGENT_SEQUENCE: list[tuple[str, str]] = [
     ("portfolio", "ポートフォリオ分析"),
-    ("market_structure", "マーケット構造分析"),
+    ("market", "市場分析"),
     ("screening", "銘柄スクリーニング"),
     ("market_data", "市場データ収集"),
     ("technical", "テクニカル分析"),
@@ -61,7 +61,7 @@ _SUGGESTION = "suggestion"
 # build_topology でリーフノードから動的にエッジを張る。
 HARD_PREREQS: dict[str, tuple[str, ...]] = {
     "portfolio": (),
-    "market_structure": (),
+    "market": (),
     "screening": (),
     "market_data": ("screening",),
     "technical": ("market_data",),
@@ -72,7 +72,7 @@ HARD_PREREQS: dict[str, tuple[str, ...]] = {
 
 _NODES: dict[str, Any] = {
     "portfolio": portfolio_node,
-    "market_structure": market_structure_node,
+    "market": market_node,
     "screening": screening_node,
     "market_data": market_data_node,
     "technical": technical_multi_node,

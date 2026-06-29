@@ -4,7 +4,10 @@ import asyncio
 import logging
 from typing import Any
 
-from app.services.external.yahoo_finance_client import YahooFinanceClient
+from app.services.external.providers import (
+    MarketDataProvider,
+    get_market_data_provider,
+)
 from app.types.agents.multi_agent import (
     AgentError,
     MarketData,
@@ -18,7 +21,7 @@ _MAX_TICKERS = 5
 
 
 async def _fetch_one(
-    client: YahooFinanceClient, candidate: ScreeningCandidate
+    client: MarketDataProvider, candidate: ScreeningCandidate
 ) -> MarketData:
     symbol = candidate["ticker"]
     quote = await client.get_quote(symbol)
@@ -52,7 +55,7 @@ async def market_data_node(state: MultiAgentState) -> dict[str, Any]:
             ],
         }
 
-    client = YahooFinanceClient()
+    client = get_market_data_provider()
     candidates = screening["candidates"][:_MAX_TICKERS]
     results = await asyncio.gather(
         *(_fetch_one(client, c) for c in candidates),

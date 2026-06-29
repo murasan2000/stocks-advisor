@@ -1,4 +1,9 @@
-import type { AgentKey, CreateJobResponse, Job } from '../types/api'
+import type {
+  AgentKey,
+  CreateJobResponse,
+  Job,
+  MarketOverview,
+} from '../types/api'
 
 const BASE_URL = '/api/v1'
 
@@ -34,4 +39,8 @@ export function getJob(jobId: string): Promise<Job> {
 
 export function getJobs(limit = 10): Promise<Job[]> {
   return request<Job[]>(`/jobs?limit=${limit}`)
+}
+
+export function getMarketOverview(): Promise<MarketOverview> {
+  return request<MarketOverview>('/market/overview')
 }

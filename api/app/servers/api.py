@@ -8,9 +8,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Response
 
 from app.services.agents.graph.agent_selection import AGENT_KEYS
+from app.services.agents.market_agent import MarketAgent
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_advisor_job
-from app.types.api import CreateJobResponse, HealthResponse, StockQuery
+from app.types.agents.multi_agent import empty_state
+from app.types.api import (
+    CreateJobResponse,
+    HealthResponse,
+    MarketOverviewResponse,
+    StockQuery,
+)
 from app.types.jobs import Job, JobStatus
 from app.utils.logging_config import setup_logging
 from app.utils.settings import settings
@@ -78,6 +85,24 @@ async def get_job(job_id: str) -> Job:
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found")
     return job
+
+
+# ---------------------------------------------------------------------------
+# 市場サマリー（Market Agent / ダッシュボード上部の市場概況）
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/market/overview", response_model=MarketOverviewResponse)
+async def market_overview() -> MarketOverviewResponse:
+    """Market Agent を単体実行し、市場全体の概況（★評価付き）を返す。
+
+    ジョブを介さず即時に取得する軽量エンドポイント。
+    取得には MarketDataProvider（EXTERNAL_API_MODE で live/mock 切替）を用いる。
+    """
+    overview = await MarketAgent().collect(empty_state())
+    if overview is None:
+        raise HTTPException(status_code=503, detail="市場データを取得できませんでした")
+    return MarketOverviewResponse.model_validate(overview)
 
 
 # ---------------------------------------------------------------------------
