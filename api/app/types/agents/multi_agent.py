@@ -25,6 +25,7 @@ class IndexQuote(TypedDict):
     category: str  # "index" | "fx"
     price: float
     change_pct: float  # 前日比（%）
+    note: str | None  # 代理シンボル使用時の注意書きなど（UI でホバー表示）
 
 
 class MarketOverview(TypedDict):

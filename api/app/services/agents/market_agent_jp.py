@@ -29,10 +29,14 @@ from app.types.agents.multi_agent import IndexQuote, MarketOverview, MultiAgentS
 logger = logging.getLogger(__name__)
 
 # 取得対象（日本株版）: 主要指数と為替。
-_TARGETS: list[tuple[str, str, str]] = [
-    ("^N225", "日経平均", "index"),
-    ("^TOPX", "TOPIX", "index"),
-    ("USDJPY=X", "ドル円", "fx"),
+# TOPIX(^TOPX) は Yahoo Finance 側で 2019 年以降ヒストリカルデータの配信が
+# 停止しているため、TOPIX 連動 ETF（1306.T）を代理シンボルとして使う。
+_TOPIX_NOTE = "Yahoo Financeが^TOPXの配信を停止しているため、TOPIX連動ETF(1306.T)の価格を代理表示しています。"
+
+_TARGETS: list[tuple[str, str, str, str | None]] = [
+    ("^N225", "日経平均", "index", None),
+    ("1306.T", "TOPIX", "index", _TOPIX_NOTE),
+    ("USDJPY=X", "ドル円", "fx", None),
 ]
 
 
@@ -78,12 +82,12 @@ class JapanMarketAgent(BaseAgent[MarketOverview]):
 
     async def collect(self, state: MultiAgentState) -> MarketOverview | None:
         results = await asyncio.gather(
-            *(self._provider.get_quote(sym) for sym, _, _ in _TARGETS),
+            *(self._provider.get_quote(sym) for sym, _, _, _ in _TARGETS),
             return_exceptions=True,
         )
 
         indices: list[IndexQuote] = []
-        for (symbol, name, category), result in zip(_TARGETS, results, strict=True):
+        for (symbol, name, category, note), result in zip(_TARGETS, results, strict=True):
             if isinstance(result, BaseException):
                 logger.warning("market quote failed for %s: %s", symbol, result)
                 continue
@@ -94,6 +98,7 @@ class JapanMarketAgent(BaseAgent[MarketOverview]):
                     category=category,
                     price=round(result.regular_market_price, 4),
                     change_pct=round(result.regular_market_change_percent, 2),
+                    note=note,
                 )
             )
 

@@ -32,6 +32,7 @@ class IndexQuoteOut(BaseModel):
     category: str  # "index" | "fx" | "rate" | "volatility"
     price: float
     change_pct: float
+    note: str | None = None
 
 
 class MarketOverviewResponse(BaseModel):

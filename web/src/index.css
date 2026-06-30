@@ -928,6 +928,12 @@ button {
   white-space: nowrap;
 }
 
+.market-item-note-icon {
+  margin-left: 4px;
+  cursor: help;
+  opacity: 0.7;
+}
+
 .market-item-right {
   display: flex;
   align-items: baseline;

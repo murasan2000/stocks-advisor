@@ -17,8 +17,10 @@ _NAME_TO_SYMBOL: dict[str, str] = {
     "日本電信電話": "9432.T",
     "日経平均": "^N225",
     "日経225": "^N225",
-    "TOPIX": "^TOPX",
-    "トピックス": "^TOPX",
+    # ^TOPX は Yahoo Finance 側で 2019 年以降ヒストリカルデータの配信が
+    # 停止しているため、TOPIX 連動 ETF（1306.T）をプロキシとして使う。
+    "TOPIX": "1306.T",
+    "トピックス": "1306.T",
     "S&P500": "^GSPC",
     "S&P 500": "^GSPC",
     "NASDAQ": "^IXIC",

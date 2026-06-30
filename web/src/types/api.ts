@@ -62,6 +62,7 @@ export interface IndexQuote {
   category: 'index' | 'fx' | 'rate' | 'volatility'
   price: number
   change_pct: number
+  note?: string | null
 }
 
 /** Market Agent の出力（市場全体の概況） */

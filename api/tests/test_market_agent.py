@@ -25,7 +25,12 @@ async def test_collect_returns_valid_overview() -> None:
     assert overview["market_trend"] in {"強気", "中立", "弱気"}
     assert overview["summary"].startswith("市場総合評価")
     symbols = {q["symbol"] for q in overview["indices"]}
-    assert symbols == {"^N225", "^TOPX", "USDJPY=X"}
+    assert symbols == {"^N225", "1306.T", "USDJPY=X"}
+
+    topix = next(q for q in overview["indices"] if q["symbol"] == "1306.T")
+    assert topix["note"] is not None
+    others = [q for q in overview["indices"] if q["symbol"] != "1306.T"]
+    assert all(q["note"] is None for q in others)
 
 
 async def test_collect_is_deterministic() -> None:

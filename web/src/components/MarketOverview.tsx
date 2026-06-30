@@ -48,7 +48,18 @@ export function MarketOverview() {
               const up = m.change_pct >= 0
               return (
                 <div key={m.symbol} className="market-item">
-                  <span className="market-item-name">{m.name}</span>
+                  <span className="market-item-name">
+                    {m.name}
+                    {m.note ? (
+                      <span
+                        className="market-item-note-icon"
+                        title={m.note}
+                        aria-label={m.note}
+                      >
+                        ⓘ
+                      </span>
+                    ) : null}
+                  </span>
                   <div className="market-item-right">
                     <span className="market-item-value">{formatPrice(m)}</span>
                     <span className={`market-item-change ${up ? 'up' : 'down'}`}>
