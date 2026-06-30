@@ -29,6 +29,10 @@ _HISTORY_PERIOD = "5y"
 _ONE_YEAR_TRADING_DAYS = 248
 
 
+class NoDataError(Exception):
+    """価格データが取得できない（上場廃止・未上場など）銘柄を表す。"""
+
+
 def _seed(code: str) -> int:
     return int.from_bytes(hashlib.sha256(code.encode()).digest()[:4], "big")
 
@@ -146,9 +150,11 @@ def _fetch_live_sync(ticker: Ticker) -> StockRow:
     closes: list[float] = []
     if not hist.empty:
         closes = [float(c) for c in hist["Close"].tolist() if c == c]  # NaN 除外
-    price = float(info.get("currentPrice") or info.get("regularMarketPrice") or 0) or (
-        closes[-1] if closes else None
-    )
+    info_price = info.get("currentPrice") or info.get("regularMarketPrice")
+    if not closes and not info_price:
+        # 価格もヒストリカルも無い = 上場廃止/未上場。スキップ対象として通知。
+        raise NoDataError(ticker.symbol)
+    price = float(info_price or 0) or (closes[-1] if closes else None)
     change_pct = info.get("regularMarketChangePercent")
     if change_pct is None and len(closes) >= 2 and closes[-2]:
         change_pct = (closes[-1] - closes[-2]) / closes[-2] * 100
@@ -176,14 +182,22 @@ def _fetch_live_sync(ticker: Ticker) -> StockRow:
     )
 
 
-async def fetch_row(ticker: Ticker) -> StockRow:
-    """1 銘柄のスナップショットを取得する（モード自動切替・失敗時は合成）。"""
+async def fetch_row(ticker: Ticker) -> StockRow | None:
+    """1 銘柄のスナップショットを取得する。
+
+    mock: 決定論的合成を返す。
+    live: yfinance から取得。価格データが無い（上場廃止等）銘柄や取得失敗は
+          None を返してスキップする（偽の合成データを入れない）。
+    """
     if settings.external_api_mode != "live":
         return _synth_row(ticker)
     import asyncio
 
     try:
         return await asyncio.to_thread(_fetch_live_sync, ticker)
+    except NoDataError:
+        logger.info("skip %s: no price data (delisted?)", ticker.symbol)
+        return None
     except Exception as exc:
-        logger.warning("live fetch failed for %s, synth fallback: %s", ticker.code, exc)
-        return _synth_row(ticker)
+        logger.warning("skip %s: live fetch failed: %s", ticker.symbol, exc)
+        return None

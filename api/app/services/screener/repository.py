@@ -31,7 +31,8 @@ _CREATE_META = """
 CREATE TABLE IF NOT EXISTS screener_meta (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_refresh REAL,
-    source TEXT
+    source TEXT,
+    universe_count INTEGER
 )
 """
 
@@ -52,9 +53,18 @@ class ScreenerRepository:
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(_CREATE_SNAPSHOT)
             await db.execute(_CREATE_META)
+            # 既存DB（universe_count カラムなし）へのマイグレーション
+            async with db.execute("PRAGMA table_info(screener_meta)") as cursor:
+                cols = {str(row[1]) for row in await cursor.fetchall()}
+            if "universe_count" not in cols:
+                await db.execute(
+                    "ALTER TABLE screener_meta ADD COLUMN universe_count INTEGER"
+                )
             await db.commit()
 
-    async def replace_all(self, rows: list[StockRow], source: str) -> None:
+    async def replace_all(
+        self, rows: list[StockRow], source: str, universe_count: int
+    ) -> None:
         """スナップショットを丸ごと置き換え、最終更新メタを更新する。"""
         placeholders = ", ".join(["?"] * len(_FIELDS))
         values = [tuple(getattr(r, f) for f in _FIELDS) for r in rows]
@@ -65,10 +75,11 @@ class ScreenerRepository:
                 values,
             )
             await db.execute(
-                "INSERT INTO screener_meta (id, last_refresh, source) VALUES (1, ?, ?)"
+                "INSERT INTO screener_meta (id, last_refresh, source, universe_count)"
+                " VALUES (1, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET last_refresh=excluded.last_refresh,"
-                " source=excluded.source",
-                (time.time(), source),
+                " source=excluded.source, universe_count=excluded.universe_count",
+                (time.time(), source, universe_count),
             )
             await db.commit()
 
@@ -87,15 +98,18 @@ class ScreenerRepository:
                 row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
-    async def get_meta(self) -> tuple[float | None, str | None]:
+    async def get_meta(self) -> tuple[float | None, str | None, int]:
+        """(last_refresh, source, universe_count) を返す。"""
         async with aiosqlite.connect(self._db_path) as db:
             async with db.execute(
-                "SELECT last_refresh, source FROM screener_meta WHERE id = 1"
+                "SELECT last_refresh, source, universe_count"
+                " FROM screener_meta WHERE id = 1"
             ) as cursor:
                 row = await cursor.fetchone()
         if row is None:
-            return None, None
+            return None, None, 0
         return (
             float(row[0]) if row[0] is not None else None,
             str(row[1]) if row[1] is not None else None,
+            int(row[2]) if row[2] is not None else 0,
         )

@@ -97,12 +97,12 @@ async def screener_stocks(
 @app.get("/api/v1/screener/meta", response_model=ScreenerMeta)
 async def screener_meta() -> ScreenerMeta:
     """スナップショットのメタ情報（最終更新・件数・取得元）を返す。"""
-    last_refresh, source = await _screener_repo.get_meta()
+    last_refresh, source, universe_count = await _screener_repo.get_meta()
     from app.services.screener.universe import load_universe, universe_source
 
     return ScreenerMeta(
         last_refresh=last_refresh,
-        universe_count=len(load_universe()),
+        universe_count=universe_count or len(load_universe()),
         snapshot_count=await _screener_repo.count(),
         source=source or universe_source(),
     )

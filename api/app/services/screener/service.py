@@ -10,7 +10,13 @@ from dataclasses import dataclass, field
 from app.services.screener.fetcher import fetch_row
 from app.services.screener.metrics import is_oversold_rebound
 from app.services.screener.repository import ScreenerRepository
-from app.services.screener.universe import load_universe, universe_source
+from app.services.screener.universe import (
+    Ticker,
+    fetch_jpx_universe,
+    load_universe,
+    save_universe,
+    universe_source,
+)
 from app.types.api import ScreenerMeta, ScreenerSummary, StockRow, StocksResponse
 from app.utils.settings import settings
 
@@ -138,6 +144,23 @@ class ScreenerService:
     def __init__(self, repo: ScreenerRepository) -> None:
         self._repo = repo
 
+    async def _resolve_universe(self) -> list[Ticker]:
+        """更新対象のユニバースを決める。
+
+        live では JPX から全銘柄を取得してディスクへキャッシュする。失敗時は
+        キャッシュ/同梱シードにフォールバックする。mock はシードを使う。
+        """
+        if settings.external_api_mode != "live":
+            return load_universe()
+        try:
+            universe = await asyncio.to_thread(fetch_jpx_universe)
+            save_universe(universe, source="jpx")
+            logger.info("fetched JPX universe: %d tickers", len(universe))
+            return universe
+        except Exception as exc:
+            logger.warning("JPX universe fetch failed, fallback: %s", exc)
+            return load_universe()
+
     async def refresh(
         self,
         progress: Callable[[int, int], Awaitable[None]] | None = None,
@@ -147,15 +170,14 @@ class ScreenerService:
         Args:
             progress: (done, total) を受け取る進捗コールバック（任意）。
         Returns:
-            キャッシュした銘柄数。
+            キャッシュした銘柄数（取得できなかった銘柄は除外）。
         """
-        universe = load_universe()
+        universe = await self._resolve_universe()
         total = len(universe)
         sem = asyncio.Semaphore(_REFRESH_CONCURRENCY)
         done = 0
-        rows: list[StockRow] = []
 
-        async def _one(idx: int) -> StockRow:
+        async def _one(idx: int) -> StockRow | None:
             nonlocal done
             async with sem:
                 row = await fetch_row(universe[idx])
@@ -164,9 +186,17 @@ class ScreenerService:
                 await progress(done, total)
             return row
 
-        rows = await asyncio.gather(*(_one(i) for i in range(total)))
-        await self._repo.replace_all(rows, source=settings.external_api_mode)
-        logger.info("screener snapshot refreshed: %d stocks", len(rows))
+        results = await asyncio.gather(*(_one(i) for i in range(total)))
+        rows = [r for r in results if r is not None]
+        await self._repo.replace_all(
+            rows, source=settings.external_api_mode, universe_count=total
+        )
+        logger.info(
+            "screener snapshot refreshed: %d/%d stocks (skipped %d)",
+            len(rows),
+            total,
+            total - len(rows),
+        )
         return len(rows)
 
     async def query(self, filters: ScreenerFilters, stage: int) -> StocksResponse:
@@ -180,10 +210,10 @@ class ScreenerService:
         page = filtered[start : start + PAGE_SIZE]
         next_stage = stage + 1 if start + PAGE_SIZE < len(filtered) else None
 
-        last_refresh, source = await self._repo.get_meta()
+        last_refresh, source, universe_count = await self._repo.get_meta()
         meta = ScreenerMeta(
             last_refresh=last_refresh,
-            universe_count=len(load_universe()),
+            universe_count=universe_count or len(load_universe()),
             snapshot_count=len(all_rows),
             source=source or universe_source(),
         )

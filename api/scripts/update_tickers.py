@@ -1,14 +1,13 @@
-"""東証上場銘柄ユニバース（tse_prime_tickers.json）を JPX 公開リストから更新する。
+"""東証上場銘柄ユニバースの同梱シード(tse_prime_tickers.json)を JPX から再生成する。
 
-JPX が公開する「東証上場銘柄一覧」(data_j.xls) を取得し、市場区分ごとに
-コード・銘柄名を抽出して、スクリーナーが読み込む JSON を再生成する。
+通常は live 更新時にサーバが自動で JPX から取得・キャッシュするため必須ではないが、
+リポジトリに全銘柄リストを同梱しておきたい場合に使う。
 
-使い方:
-    # .xls 読み込みに xlrd が必要
-    uv run --with xlrd python scripts/update_tickers.py            # プライムのみ
-    uv run --with xlrd python scripts/update_tickers.py --all      # 全市場
+使い方（.xls 読み込みに xlrd が必要。本体依存に含まれる）:
+    uv run python scripts/update_tickers.py            # プライムのみ
+    uv run python scripts/update_tickers.py --all      # 全市場
 
-ネットワークから JPX へ到達できる環境で実行すること（egress 制限環境では不可）。
+JPX へ到達できる環境で実行すること。
 """
 
 from __future__ import annotations
@@ -17,56 +16,26 @@ import argparse
 import json
 from pathlib import Path
 
-import pandas as pd
+from app.services.screener.universe import fetch_jpx_universe
 
-_JPX_URL = (
-    "https://www.jpx.co.jp/markets/statistics-equities/misc/"
-    "tvdivq0000001vg2-att/data_j.xls"
-)
 _OUT = Path(__file__).resolve().parents[1] / (
     "app/services/screener/data/tse_prime_tickers.json"
 )
 
-# JPX「市場・商品区分」→ アプリ内ラベル
-_MARKET_MAP = {
-    "プライム（内国株式）": "プライム",
-    "スタンダード（内国株式）": "スタンダード",
-    "グロース（内国株式）": "グロース",
-    "プライム（外国株式）": "プライム",
-    "スタンダード（外国株式）": "スタンダード",
-    "グロース（外国株式）": "グロース",
-}
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="プライム以外（スタンダード・グロース）も含める",
-    )
+    parser.add_argument("--all", action="store_true", help="プライム以外も含める")
     args = parser.parse_args()
 
-    df = pd.read_excel(_JPX_URL, dtype={"コード": str})
-    df = df[df["市場・商品区分"].isin(_MARKET_MAP)]
-    if not args.all:
-        df = df[df["市場・商品区分"].str.startswith("プライム")]
-
-    tickers = [
-        {
-            "code": str(row["コード"]).strip(),
-            "name": str(row["銘柄名"]).strip(),
-            "market": _MARKET_MAP[str(row["市場・商品区分"])],
-        }
-        for _, row in df.iterrows()
-    ]
-    tickers.sort(key=lambda t: t["code"])
-
+    tickers = fetch_jpx_universe(prime_only=not args.all)
     payload = {
         "source": "jpx",
         "note": "JPX『東証上場銘柄一覧』(data_j.xls) から生成。",
-        "market_label": "プライム" if not args.all else "全市場",
-        "tickers": tickers,
+        "market_label": "全市場" if args.all else "プライム",
+        "tickers": [
+            {"code": t.code, "name": t.name, "market": t.market} for t in tickers
+        ],
     }
     _OUT.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
