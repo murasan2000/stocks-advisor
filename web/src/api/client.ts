@@ -1,8 +1,9 @@
 import type {
-  AgentKey,
   CreateJobResponse,
+  Filters,
   Job,
-  MarketOverview,
+  ScreenerMeta,
+  StocksResponse,
 } from '../types/api'
 
 const BASE_URL = '/api/v1'
@@ -19,28 +20,44 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export function createJob(
-  query: string,
-  agents: AgentKey[] | null = null,
-): Promise<CreateJobResponse> {
-  return request<CreateJobResponse>('/jobs', {
-    method: 'POST',
-    // agents が空配列のときはフルパイプライン（null 扱い）
-    body: JSON.stringify({
-      query,
-      agents: agents && agents.length > 0 ? agents : null,
-    }),
-  })
+function buildQuery(filters: Filters, stage: number): string {
+  const p = new URLSearchParams()
+  p.set('stage', String(stage))
+  if (filters.q.trim()) p.set('q', filters.q.trim())
+  for (const m of filters.markets) p.append('markets', m)
+  const numeric: [string, number | undefined][] = [
+    ['per_min', filters.perMin],
+    ['per_max', filters.perMax],
+    ['pbr_max', filters.pbrMax],
+    ['dividend_yield_min', filters.dividendYieldMin],
+    ['roe_min', filters.roeMin],
+    ['market_cap_min', filters.marketCapMin],
+  ]
+  for (const [key, value] of numeric) {
+    if (value !== undefined && value !== null) p.set(key, String(value))
+  }
+  if (filters.oversold) {
+    p.set('oversold', 'true')
+    p.set('drop_from_high_pct', String(filters.dropFromHighPct))
+    p.set('rebound_from_low_pct', String(filters.reboundFromLowPct))
+  }
+  p.set('sort_by', filters.sortBy)
+  p.set('sort_desc', String(filters.sortDesc))
+  return p.toString()
+}
+
+export function getStocks(filters: Filters, stage: number): Promise<StocksResponse> {
+  return request<StocksResponse>(`/screener/stocks?${buildQuery(filters, stage)}`)
+}
+
+export function getScreenerMeta(): Promise<ScreenerMeta> {
+  return request<ScreenerMeta>('/screener/meta')
+}
+
+export function refreshSnapshot(): Promise<CreateJobResponse> {
+  return request<CreateJobResponse>('/screener/refresh', { method: 'POST' })
 }
 
 export function getJob(jobId: string): Promise<Job> {
   return request<Job>(`/jobs/${jobId}`)
-}
-
-export function getJobs(limit = 10): Promise<Job[]> {
-  return request<Job[]>(`/jobs?limit=${limit}`)
-}
-
-export function getMarketOverview(): Promise<MarketOverview> {
-  return request<MarketOverview>('/market/overview')
 }

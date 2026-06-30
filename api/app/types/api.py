@@ -5,13 +5,6 @@ from pydantic import BaseModel
 from app.types.jobs import JobStatus
 
 
-class StockQuery(BaseModel):
-    query: str
-    # Phase 3.5: 実行するエージェントの選択。
-    # None / 空でフルパイプライン。前提エージェントは自動補完される。
-    agents: list[str] | None = None
-
-
 class CreateJobResponse(BaseModel):
     job_id: str
     status: JobStatus
@@ -24,24 +17,62 @@ class HealthResponse(BaseModel):
     version: str
 
 
-class IndexQuoteOut(BaseModel):
-    """市場サマリーの指数・為替・金利 1 項目。"""
+# ---------------------------------------------------------------------------
+# スクリーナー（株式スクリーニング）
+# ---------------------------------------------------------------------------
 
-    symbol: str
+
+class StockRow(BaseModel):
+    """スクリーニング結果の 1 銘柄。スナップショットキャッシュの 1 行に対応。"""
+
+    code: str  # 証券コード（例: "7203", "167A"）
+    symbol: str  # Yahoo Finance シンボル（例: "7203.T"）
     name: str
-    category: str  # "index" | "fx" | "rate" | "volatility"
-    price: float
-    change_pct: float
-    note: str | None = None
+    market: str  # "プライム" | "スタンダード" | "グロース" | "ETF" | "REIT"
+    price: float | None = None
+    change_pct: float | None = None
+    volume: int | None = None
+    market_cap: float | None = None
+    per: float | None = None
+    pbr: float | None = None
+    dividend_yield: float | None = None  # %
+    roe: float | None = None  # %
+    rsi: float | None = None  # 14日RSI
+    # 下がりすぎ反発検出用
+    high_5y: float | None = None
+    low_1y: float | None = None
+    drop_from_high_pct: float | None = None  # 5年高値からの下落率（%, 正値）
+    rebound_from_low_pct: float | None = None  # 1年安値からの反発率（%, 正値）
+    score: int = 0  # 総合スコア（0〜100）
 
 
-class MarketOverviewResponse(BaseModel):
-    """GET /api/v1/market/overview のレスポンス（Market Agent の出力）。"""
+class ScreenerSummary(BaseModel):
+    """絞り込み結果全体の集計（統計カード用）。"""
 
-    indices: list[IndexQuoteOut]
-    market_trend: str
-    macro_score: float
-    rating: int  # 1〜5（★の数）
-    as_of: str
-    summary: str
+    count: int
+    avg_per: float | None = None
+    avg_dividend_yield: float | None = None
+    avg_roe: float | None = None
+    up: int = 0
+    down: int = 0
+    unchanged: int = 0
 
+
+class ScreenerMeta(BaseModel):
+    """スナップショットのメタ情報。"""
+
+    last_refresh: float | None = None  # 最終更新（epoch秒）
+    universe_count: int = 0  # ユニバース全銘柄数
+    snapshot_count: int = 0  # キャッシュ済み銘柄数
+    source: str  # "live" | "mock"
+
+
+class StocksResponse(BaseModel):
+    """GET /api/v1/screener/stocks のレスポンス（段階取得）。"""
+
+    stocks: list[StockRow]
+    stage: int
+    next_stage: int | None  # 続きがある場合は次の stage 番号、無ければ None
+    total: int  # フィルタ適用後の総件数
+    summary: ScreenerSummary
+    meta: ScreenerMeta

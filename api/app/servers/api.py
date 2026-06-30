@@ -1,108 +1,141 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Response
 
-from app.services.agents.graph.agent_selection import AGENT_KEYS
-from app.services.agents.market_agent_jp import JapanMarketAgent
 from app.services.jobs.repository import JobRepository
-from app.services.jobs.runner import run_advisor_job
-from app.types.agents.multi_agent import empty_state
+from app.services.jobs.runner import run_refresh_job
+from app.services.screener.repository import ScreenerRepository
+from app.services.screener.service import ScreenerFilters, ScreenerService
 from app.types.api import (
     CreateJobResponse,
     HealthResponse,
-    MarketOverviewResponse,
-    StockQuery,
+    ScreenerMeta,
+    StocksResponse,
 )
 from app.types.jobs import Job, JobStatus
 from app.utils.logging_config import setup_logging
 from app.utils.settings import settings
 
+logger = logging.getLogger(__name__)
+
 _job_repo = JobRepository(settings.db_path)
+_screener_repo = ScreenerRepository(settings.db_path)
+_screener = ScreenerService(_screener_repo)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     setup_logging()
     await _job_repo.initialize()
+    await _screener_repo.initialize()
+    # mock モードかつキャッシュが空なら、合成データで即時シードする（開発用）。
+    if settings.external_api_mode != "live" and await _screener_repo.count() == 0:
+        logger.info("seeding screener snapshot with mock data")
+        await _screener.refresh()
     yield
 
 
-app = FastAPI(title="Stock Advisor API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Stocks Advisor API", version="0.2.0", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------------------
-# ジョブキュー（バッチ・信頼性優先）
+# スクリーナー（株式スクリーニング）
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/v1/jobs", response_model=CreateJobResponse, status_code=202)
-async def create_job(request: StockQuery) -> CreateJobResponse:
-    """調査ジョブを作成し job_id を即時返却する（HTTP 202 Accepted）。
+@app.get("/api/v1/screener/stocks", response_model=StocksResponse)
+async def screener_stocks(
+    stage: int = Query(default=1, ge=1),
+    markets: list[str] | None = Query(default=None),  # noqa: B008  (FastAPI 既定値の慣用)
+    q: str | None = Query(default=None),
+    per_min: float | None = Query(default=None),
+    per_max: float | None = Query(default=None),
+    pbr_max: float | None = Query(default=None),
+    dividend_yield_min: float | None = Query(default=None),
+    roe_min: float | None = Query(default=None),
+    market_cap_min: float | None = Query(default=None),
+    market_cap_max: float | None = Query(default=None),
+    rsi_min: float | None = Query(default=None),
+    rsi_max: float | None = Query(default=None),
+    oversold: bool = Query(default=False),
+    drop_from_high_pct: float = Query(default=50.0),
+    rebound_from_low_pct: float = Query(default=10.0),
+    sort_by: str = Query(default="score"),
+    sort_desc: bool = Query(default=True),
+) -> StocksResponse:
+    """条件で絞り込んだ銘柄を段階（stage）ごとに返す。
 
-    処理はバックグラウンドで実行される。
-    GET /api/v1/jobs/{job_id} でステータスと結果をポーリングする。
+    クライアントは next_stage が null になるまで stage を増やして取得する。
     """
-    if request.agents is not None:
-        unknown = [a for a in request.agents if a not in AGENT_KEYS]
-        if unknown:
-            raise HTTPException(
-                status_code=422,
-                detail=f"unknown agents: {unknown}",
-            )
-
-    job_id = str(uuid.uuid4())
-    await _job_repo.create(job_id, request.query)
-    asyncio.create_task(
-        run_advisor_job(
-            job_id,
-            request.query,
-            _job_repo,
-            agents=request.agents,
-        )
+    filters = ScreenerFilters(
+        markets=markets or [],
+        query=q,
+        per_min=per_min,
+        per_max=per_max,
+        pbr_max=pbr_max,
+        dividend_yield_min=dividend_yield_min,
+        roe_min=roe_min,
+        market_cap_min=market_cap_min,
+        market_cap_max=market_cap_max,
+        rsi_min=rsi_min,
+        rsi_max=rsi_max,
+        oversold_enabled=oversold,
+        drop_from_high_pct=drop_from_high_pct,
+        rebound_from_low_pct=rebound_from_low_pct,
+        sort_by=sort_by,
+        sort_desc=sort_desc,
     )
+    return await _screener.query(filters, stage)
+
+
+@app.get("/api/v1/screener/meta", response_model=ScreenerMeta)
+async def screener_meta() -> ScreenerMeta:
+    """スナップショットのメタ情報（最終更新・件数・取得元）を返す。"""
+    last_refresh, source = await _screener_repo.get_meta()
+    from app.services.screener.universe import load_universe, universe_source
+
+    return ScreenerMeta(
+        last_refresh=last_refresh,
+        universe_count=len(load_universe()),
+        snapshot_count=await _screener_repo.count(),
+        source=source or universe_source(),
+    )
+
+
+@app.post("/api/v1/screener/refresh", response_model=CreateJobResponse, status_code=202)
+async def screener_refresh() -> CreateJobResponse:
+    """スナップショット更新ジョブを作成し、バックグラウンドで実行する。
+
+    進捗は GET /api/v1/jobs/{job_id} でポーリングできる。
+    """
+    job_id = str(uuid.uuid4())
+    await _job_repo.create(job_id, "screener_refresh")
+    asyncio.create_task(run_refresh_job(job_id, _job_repo, _screener))
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
+
+
+# ---------------------------------------------------------------------------
+# ジョブ（汎用バックグラウンド実行基盤 / 将来のエージェント実行でも利用）
+# ---------------------------------------------------------------------------
 
 
 @app.get("/api/v1/jobs", response_model=list[Job])
 async def list_jobs(limit: int = Query(default=10, ge=1, le=50)) -> list[Job]:
-    """最近のジョブ一覧を返す（最近のチャット表示用）。"""
     return await _job_repo.list(limit=limit)
 
 
 @app.get("/api/v1/jobs/{job_id}", response_model=Job)
 async def get_job(job_id: str) -> Job:
-    """ジョブのステータスと結果を返す（ポーリング用）。
-
-    status が "done" になると result に最終回答が格納される。
-    status が "error" になると error にエラー詳細が格納される。
-    """
     job = await _job_repo.get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found")
     return job
-
-
-# ---------------------------------------------------------------------------
-# 市場サマリー（Market Agent / ダッシュボード上部の市場概況）
-# ---------------------------------------------------------------------------
-
-
-@app.get("/api/v1/market/overview", response_model=MarketOverviewResponse)
-async def market_overview() -> MarketOverviewResponse:
-    """Market Agent を単体実行し、市場全体の概況（★評価付き）を返す。
-
-    ジョブを介さず即時に取得する軽量エンドポイント。
-    取得には MarketDataProvider（EXTERNAL_API_MODE で live/mock 切替）を用いる。
-    """
-    overview = await JapanMarketAgent().collect(empty_state())
-    if overview is None:
-        raise HTTPException(status_code=503, detail="市場データを取得できませんでした")
-    return MarketOverviewResponse.model_validate(overview)
 
 
 # ---------------------------------------------------------------------------
@@ -115,10 +148,8 @@ async def health_check(response: Response) -> HealthResponse:
     db_ok = await _job_repo.ping()
     db_status = "ok" if db_ok else "error"
     overall = "ok" if db_ok else "error"
-
     if not db_ok:
         response.status_code = 503
-
     return HealthResponse(
         status=overall,
         db=db_status,

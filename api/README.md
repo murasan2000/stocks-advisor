@@ -1,6 +1,7 @@
 # Stocks Advisor API
 
-FastAPI ベースのバックエンドです。株式調査ジョブの作成、結果取得、市場サマリーの取得を提供します。
+FastAPI ベースのバックエンドです。東証銘柄の**株式スクリーニング**（条件絞り込み・
+下がりすぎ反発検出）と、スナップショット更新ジョブを提供します。
 
 ## 開発開始
 
@@ -8,47 +9,66 @@ FastAPI ベースのバックエンドです。株式調査ジョブの作成、
 cd api
 cp .env.example .env
 uv sync
-uv run python -m app.servers.api
+uv run python -m app.servers.api      # http://localhost:8000
 ```
+
+mock モード（既定）では、起動時に決定論的な合成データでスナップショットを自動生成
+するため、ネットワーク不要ですぐに動作確認できます。
 
 ## テスト / 静的解析
 
 ```bash
-uv run pytest          # ユニットテスト（mock/合成データで実行、ネットワーク・LLM 非依存）
-uv run ruff check app/ # Lint
-uv run mypy app/       # 型チェック
+uv run pytest          # mock/合成データで実行（ネットワーク・LLM 非依存）
+uv run ruff check app/
+uv run mypy app/
 ```
 
-## エージェント構成
+## アーキテクチャ
 
-エージェントは核となる基底クラス `BaseAgent`（`app/services/agents/base.py`）を継承する。
-基底クラスが「収集（collect）→ LLM 要約（fallback 付き）」の共通フローと、
-LangGraph ノード化（`as_node()`）を担う。サブクラスはデータ収集と整形のみを実装する。
+```
+servers/api.py                FastAPI エンドポイント
+services/screener/
+  universe.py                 銘柄ユニバース（data/tse_prime_tickers.json）読み込み
+  fetcher.py                  1銘柄の取得（live=yfinance / mock=合成）
+  metrics.py                  RSI・下がりすぎ反発・総合スコア（純粋関数）
+  repository.py               スナップショットキャッシュ（SQLite）
+  service.py                  更新（refresh）と絞り込みクエリ（staged）
+services/jobs/                汎用バックグラウンドジョブ基盤（更新ジョブ・将来のエージェント用）
+services/external/            Yahoo Finance クライアント / Provider / シンボル変換
+services/llm, services/tracing  LLM プロバイダ・Langfuse（将来のエージェント用に温存）
+```
 
-- `JapanMarketAgent`（`market`, `market_agent_jp.py`）: 設計書の **Market Agent**（日本株版）。
-  日経平均・TOPIX・ドル円を取得し、リスクオン/オフのスコアと ★1〜5 の総合評価付きで
-  市場概況を要約する。※米国株（S&P500・NASDAQ・NYダウ・VIX・米金利）は別 Issue で対応予定。
+### データ取得（snapshot キャッシュ方式）
 
-外側のパイプライン（`app/services/agents/graph/agent_selection.py`）が各エージェント
-ノードを依存解決して LangGraph で実行する。
+全銘柄（約1,595）を毎回 yfinance 取得すると数分かかるため、定期的に取得した結果を
+SQLite にキャッシュし、API はキャッシュから段階（stage）ごとに高速返却します。
 
-## データ取得ツール（Provider パターン）
+- `EXTERNAL_API_MODE=live`: yfinance 実データ（到達不可時は合成へ自動フォールバック）
+- `EXTERNAL_API_MODE=mock`: 決定論的合成データ（既定・オフライン可）
 
-市場データ取得は `MarketDataProvider`（`app/services/external/providers/`）に集約する。
-`EXTERNAL_API_MODE` で実装を切り替える。
+### 銘柄ユニバースの更新
 
-- `live`: `YahooFinanceProvider`（yfinance 実データ）。Yahoo 到達不可時は決定論的合成へ自動フォールバック。
-- `mock`: `YahooFinanceClient`（`data/mock/` のモック、無い場合は決定論的合成）。
+同梱の `app/services/screener/data/tse_prime_tickers.json` は主要銘柄のシードです。
+全銘柄へは JPX 公開リストから再生成します（JPX へ到達できる環境で実行）。
 
-エージェントは `get_market_data_provider()` だけを参照するため、将来 Polygon / Finnhub /
-Alpha Vantage などへ差し替える場合もこの 1 箇所で完結する。
+```bash
+uv run --with xlrd python scripts/update_tickers.py        # プライムのみ
+uv run --with xlrd python scripts/update_tickers.py --all  # 全市場
+```
 
 ## 主なエンドポイント
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| `GET`  | `/api/v1/market/overview` | Market Agent を即時実行し市場概況（★評価付き）を返す |
-| `POST` | `/api/v1/jobs` | 調査ジョブを作成（`agents` で実行エージェントを選択可） |
-| `GET`  | `/api/v1/jobs/{job_id}` | ジョブのステータス・進捗・結果を取得 |
-| `GET`  | `/api/v1/jobs` | 最近のジョブ一覧 |
+| `GET`  | `/api/v1/screener/stocks` | 条件で絞り込んだ銘柄を stage ごとに返す（段階取得） |
+| `GET`  | `/api/v1/screener/meta` | スナップショットのメタ（最終更新・件数・取得元） |
+| `POST` | `/api/v1/screener/refresh` | スナップショット更新ジョブを起動 |
+| `GET`  | `/api/v1/jobs/{job_id}` | ジョブの進捗・結果 |
 | `GET`  | `/health` | ヘルスチェック |
+
+### `/api/v1/screener/stocks` の主なクエリ
+
+`stage`, `markets`（複数可）, `q`, `per_min`, `per_max`, `pbr_max`,
+`dividend_yield_min`, `roe_min`, `market_cap_min`, `market_cap_max`,
+`rsi_min`, `rsi_max`, `oversold`, `drop_from_high_pct`, `rebound_from_low_pct`,
+`sort_by`, `sort_desc`

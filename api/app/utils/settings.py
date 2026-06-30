@@ -32,9 +32,8 @@ class Settings(BaseSettings):
     db_path: str = "../db/stock_advisor.db"
 
     # External API
-    # "mock": data/mock/ のモックデータ・決定論的合成を使用
-    # "live": 実データ（Market Agent は yfinance。到達不可時は合成へ自動フォールバック）
-    # data/ はリポジトリ直下の独立コンポーネント（将来 S3 等のストレージに置換予定）。
+    # "mock": 決定論的な合成データを使用（既定・オフライン可）
+    # "live": yfinance 実データ（到達不可時は合成へ自動フォールバック）
     external_api_mode: str = "mock"
     mock_data_dir: str = "../data/mock"
 

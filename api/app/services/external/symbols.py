@@ -65,3 +65,16 @@ def to_sec_code(target: str) -> str | None:
 def sanitize_symbol(symbol: str) -> str:
     """シンボルをモックファイル名に使える形式に変換する（例: 7203.T → 7203_T）。"""
     return re.sub(r"[^A-Za-z0-9_-]", "_", symbol)
+
+
+def to_yahoo_symbol(code: str) -> str:
+    """日本株の証券コードを Yahoo Finance シンボルに変換する。
+
+    日本株コードは基本4桁数字だが、一部に英字を含むものがある（例: 167A）。
+    Yahoo Finance では ``.T`` サフィックスを付ける（例: 7203 → 7203.T）。
+    既に ``.T`` 付き・指数（^始まり）・為替（=X）の場合はそのまま返す。
+    """
+    code = code.strip().upper()
+    if not code or code.startswith("^") or code.endswith("=X") or "." in code:
+        return code
+    return f"{code}.T"
