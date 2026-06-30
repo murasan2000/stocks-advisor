@@ -9,7 +9,7 @@ interface Props {
 /**
  * ホーム（空状態）でエージェントを大きめのブロックで表示する。
  * ホバーで各エージェントの説明文を表示し、クリックで実行対象として選択できる。
- * 未選択のままなら全エージェント（フルパイプライン）が実行される。
+ * 未選択のままなら既定のエージェント（MVP では Market Agent）が実行される。
  */
 export function AgentShowcase({ selected, onChange, disabled }: Props) {
   const toggle = (key: AgentKey) => {
@@ -42,8 +42,8 @@ export function AgentShowcase({ selected, onChange, disabled }: Props) {
       </div>
       <p className="agent-showcase-hint">
         {selected.length === 0
-          ? 'エージェントを選ばない場合は全エージェントで分析します'
-          : `${selected.length}個のエージェントを選択中（必要な前提は自動補完）`}
+          ? 'Market Agent が日本市場の概況を分析します'
+          : `${selected.length}個のエージェントを選択中`}
       </p>
     </div>
   )

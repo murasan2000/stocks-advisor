@@ -1,12 +1,9 @@
-"""マルチエージェント版アドバイザー（Phase 3 / Phase 3.5）。
+"""エージェントパイプラインのオーケストレーター。
 
 ジョブランナー向けに、各エージェントの開始・完了（中間サマリー付き）と
-最終回答をイベントとしてストリームする。
-
-Phase 3.5: 任意のエージェントを複数選択してサブパイプラインを実行できる。
-選択集合は依存解決（agent_selection.resolve_agents）で前提が補完され、
-選択分だけの動的サブグラフを実行する。suggestion を含まない選択では、
-各エージェントのサマリーから回答を合成して answer を発行する。
+最終回答をイベントとしてストリームする。MVP では Market Agent のみだが、
+エージェント追加時もこの仕組み（依存解決 → 動的グラフ → 進捗ストリーム）を
+そのまま利用できる。
 
 Yields:
     {"type": "agent_start", "agent": str}
@@ -33,79 +30,26 @@ from app.types.agents.multi_agent import MultiAgentState, empty_state
 
 __all__ = ["AGENT_SEQUENCE", "MultiStockAdvisor"]
 
-_MAX_SUMMARY_LEN = 500
-
 _DISCLAIMER = (
     "※本情報はAIによる分析であり、投資勧誘を目的としたものではありません。"
     "投資判断はご自身の責任で行ってください。"
 )
 
 
-def _truncate(text: str) -> str:
-    if len(text) <= _MAX_SUMMARY_LEN:
-        return text
-    return text[: _MAX_SUMMARY_LEN - 1] + "…"
-
-
 def _summarize(node: str, update: dict[str, Any]) -> str:
     """各ノードの出力から進捗表示用の中間サマリーを作る。"""
-    if node == "portfolio":
-        data = update.get("portfolio_data")
-        if not data:
-            return "ポートフォリオCSVが未連携のためスキップしました"
-        return (
-            f"保有 {len(data['holdings'])}銘柄 / "
-            f"評価額 {data['total_market_value']:,.0f}円 / "
-            f"評価損益 {data['total_unrealized_pnl']:+,.0f}円"
-            f"（{data['total_unrealized_pnl_pct']:+.1f}%）"
-        )
     if node == "market":
         analysis = update.get("market")
         return analysis["summary"] if analysis else "市場概況の取得に失敗しました"
-    if node == "screening":
-        result = update.get("screening_result")
-        return result["summary"] if result else "スクリーニングに失敗しました"
-    if node == "market_data":
-        data = update.get("market_data") or {}
-        names = ", ".join(d["company_name"] for d in data.values())
-        return f"{len(data)}銘柄の株価・チャート・企業情報を取得（{names}）"
-    if node == "technical":
-        analysis = update.get("technical_analysis") or {}
-        if not analysis:
-            return "テクニカル分析対象がありません"
-        lines = [f"{t}: {a['summary']}" for t, a in analysis.items()]
-        return _truncate("\n".join(lines))
-    if node == "fundamental":
-        analysis = update.get("fundamental_analysis") or {}
-        if not analysis:
-            return "財務分析対象がありません（指数・開示なし銘柄）"
-        lines = [f"{t}: {a['summary']}" for t, a in analysis.items()]
-        return _truncate("\n".join(lines))
-    if node == "risk":
-        assessment = update.get("risk_assessment")
-        if not assessment:
-            return "リスク評価に失敗しました"
-        return _truncate(
-            "\n".join([assessment["summary"], *assessment["suggestions"]])
-        )
-    if node == "suggestion":
-        result = update.get("final_suggestion")
-        if not result or not result["suggestions"]:
-            return "回答レポートを生成しました"
-        lines = [
-            f"{s['company_name']}: {s['action']}（信頼度 {s['confidence']:.0%}）"
-            for s in result["suggestions"]
-        ]
-        return _truncate("\n".join(lines))
     return "完了"
 
 
-def _compose_partial_answer(collected: dict[str, str]) -> str:
-    """suggestion を含まない選択時、各エージェントのサマリーから回答を合成する。"""
-    lines = ["## 選択エージェントの分析結果", ""]
+def _compose_answer(collected: dict[str, str]) -> str:
+    """各エージェントのサマリーから回答 Markdown を合成する。"""
+    lines: list[str] = []
     for key in AGENT_ORDER:
         if key in collected:
-            lines.append(f"### {AGENT_LABELS[key]}")
+            lines.append(f"## {AGENT_LABELS[key]}")
             lines.append(collected[key])
             lines.append("")
     lines.append("---")
@@ -114,19 +58,17 @@ def _compose_partial_answer(collected: dict[str, str]) -> str:
 
 
 class MultiStockAdvisor:
-    """マルチエージェントパイプラインを実行し、進捗イベントをストリームする。
+    """エージェントパイプラインを実行し、進捗イベントをストリームする。
 
     Args:
-        agents: 実行するエージェントキーの選択。None または空でフルパイプライン。
+        agents: 実行するエージェントキーの選択。None または空で既定パイプライン。
                 前提エージェントは依存解決で自動補完される。
     """
 
     def __init__(self, agents: list[str] | None = None) -> None:
         self._graph, self.resolved = build_graph(agents)
 
-    async def astream_advice(
-        self, query: str
-    ) -> AsyncGenerator[dict[str, str]]:
+    async def astream_advice(self, query: str) -> AsyncGenerator[dict[str, str]]:
         callback = get_langfuse_callback()
         config: RunnableConfig = {"callbacks": [callback]} if callback else {}
 
@@ -139,7 +81,6 @@ class MultiStockAdvisor:
         started: set[str] = set()
         done: set[str] = set()
         collected: dict[str, str] = {}
-        answer: str | None = None
 
         # 前提を持たないルートエージェントの開始を通知
         for root in roots:
@@ -158,9 +99,6 @@ class MultiStockAdvisor:
                 collected[node] = summary
                 yield {"type": "agent_end", "agent": node, "summary": summary}
 
-                if node == "suggestion":
-                    answer = str(update.get("final_answer") or "")
-
                 # 全前提が完了した後続エージェントの開始を通知
                 for child in children.get(node, []):
                     if child in started:
@@ -169,7 +107,4 @@ class MultiStockAdvisor:
                         started.add(child)
                         yield {"type": "agent_start", "agent": child}
 
-        # suggestion を含まない選択ではサマリーから回答を合成
-        if answer is None:
-            answer = _compose_partial_answer(collected)
-        yield {"type": "answer", "content": answer}
+        yield {"type": "answer", "content": _compose_answer(collected)}

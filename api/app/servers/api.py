@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Response
 
 from app.services.agents.graph.agent_selection import AGENT_KEYS
-from app.services.agents.market_agent import MarketAgent
+from app.services.agents.market_agent_jp import JapanMarketAgent
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_advisor_job
 from app.types.agents.multi_agent import empty_state
@@ -99,7 +99,7 @@ async def market_overview() -> MarketOverviewResponse:
     ジョブを介さず即時に取得する軽量エンドポイント。
     取得には MarketDataProvider（EXTERNAL_API_MODE で live/mock 切替）を用いる。
     """
-    overview = await MarketAgent().collect(empty_state())
+    overview = await JapanMarketAgent().collect(empty_state())
     if overview is None:
         raise HTTPException(status_code=503, detail="市場データを取得できませんでした")
     return MarketOverviewResponse.model_validate(overview)

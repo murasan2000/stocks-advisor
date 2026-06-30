@@ -1,8 +1,11 @@
-"""Market Agent（市場全体の概況分析）。
+"""Market Agent（日本株版 / 市場全体の概況）。
 
 設計書の ① Market Agent に対応する MVP の中核エージェント。
-主要指数・為替・金利を横断的に取得し、リスクオン/オフのスコアと
-★1〜5 の総合評価を付けて市場サマリーを生成する。
+まずは日本株にフォーカスし、日経平均・TOPIX・ドル円から市場全体の状況を
+評価する。リスクオン/オフのスコアと ★1〜5 の総合評価を付けて要約する。
+
+※米国株（S&P500・NASDAQ・NYダウ・VIX・米金利）への拡張は、日本株版が
+  安定したのち別 Issue で対応する。
 
 BaseAgent を継承し、データ収集（collect）と整形のみを実装する。
 「収集 → LLM 要約」の実行・LangGraph ノード化は BaseAgent が担う。
@@ -25,16 +28,11 @@ from app.types.agents.multi_agent import IndexQuote, MarketOverview, MultiAgentS
 
 logger = logging.getLogger(__name__)
 
-# 取得対象（設計書の Market Agent 準拠）: 指数・為替・金利・ボラティリティ。
+# 取得対象（日本株版）: 主要指数と為替。
 _TARGETS: list[tuple[str, str, str]] = [
     ("^N225", "日経平均", "index"),
     ("^TOPX", "TOPIX", "index"),
-    ("^GSPC", "S&P500", "index"),
-    ("^IXIC", "NASDAQ", "index"),
-    ("^DJI", "NYダウ", "index"),
-    ("^VIX", "VIX", "volatility"),
     ("USDJPY=X", "ドル円", "fx"),
-    ("^TNX", "米10年金利", "rate"),
 ]
 
 
@@ -58,21 +56,19 @@ def _score_to_rating(score: float) -> int:
 def _fmt(q: IndexQuote) -> str:
     if q["category"] == "fx":
         return f"{q['name']} {q['price']:.2f}円（{q['change_pct']:+.2f}%）"
-    if q["category"] == "rate":
-        return f"{q['name']} {q['price']:.3f}%（{q['change_pct']:+.2f}%）"
     return f"{q['name']} {q['price']:,.2f}（{q['change_pct']:+.2f}%）"
 
 
-class MarketAgent(BaseAgent[MarketOverview]):
-    """主要指数・為替・金利から市場全体の概況を評価するエージェント。"""
+class JapanMarketAgent(BaseAgent[MarketOverview]):
+    """日経平均・TOPIX・ドル円から日本市場の概況を評価するエージェント。"""
 
     key: ClassVar[str] = "market"
     label: ClassVar[str] = "市場分析"
     state_key: ClassVar[str] = "market"
     system_prompt: ClassVar[str] = (
-        "あなたは日本株・米国株のマーケットストラテジストです。"
-        "主要指数・為替・米金利・VIX の数値から、当日の市場全体の状況"
-        "（リスクオン/オフ、為替・米金利の影響、想定されるセクター物色）を"
+        "あなたは日本株のマーケットストラテジストです。"
+        "日経平均・TOPIX・ドル円の数値から、当日の日本市場全体の状況"
+        "（リスクオン/オフ、為替の影響、想定されるセクター物色）を"
         "2〜3文で簡潔に要約してください。"
         "数値を断定的な投資助言にせず、客観的な状況説明に留めること。"
     )
@@ -106,24 +102,13 @@ class MarketAgent(BaseAgent[MarketOverview]):
             return None  # 株式指数が 1 つも取れなければ概況を出さない
 
         equity_avg = sum(q["change_pct"] for q in equity) / len(equity)
-        # ±2% を ±1.0 に正規化（従来 market_structure と同基準）。
-        score = _clamp(equity_avg / 2.0)
-        # VIX 急騰はリスクオフ方向に微調整する。
-        vix = next((q for q in indices if q["category"] == "volatility"), None)
-        if vix is not None:
-            if vix["change_pct"] > 3:
-                score = _clamp(score - 0.1)
-            elif vix["change_pct"] < -3:
-                score = _clamp(score + 0.1)
-
-        score = round(score, 2)
-        trend = _score_to_trend(score)
-        rating = _score_to_rating(score)
+        # ±2% を ±1.0 に正規化。
+        score = round(_clamp(equity_avg / 2.0), 2)
         overview = MarketOverview(
             indices=indices,
-            market_trend=trend,
+            market_trend=_score_to_trend(score),
             macro_score=score,
-            rating=rating,
+            rating=_score_to_rating(score),
             as_of=date.today().isoformat(),
             summary="",
         )
@@ -150,4 +135,4 @@ class MarketAgent(BaseAgent[MarketOverview]):
 
 
 # グラフ登録用ノード（agent_selection から参照）。
-market_node = MarketAgent().as_node()
+market_node = JapanMarketAgent().as_node()

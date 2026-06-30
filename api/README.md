@@ -25,9 +25,9 @@ uv run mypy app/       # 型チェック
 基底クラスが「収集（collect）→ LLM 要約（fallback 付き）」の共通フローと、
 LangGraph ノード化（`as_node()`）を担う。サブクラスはデータ収集と整形のみを実装する。
 
-- `MarketAgent`（`market`）: 設計書の **Market Agent**。日経平均・TOPIX・S&P500・
-  NASDAQ・NYダウ・VIX・ドル円・米10年金利を取得し、リスクオン/オフのスコアと
-  ★1〜5 の総合評価付きで市場概況を要約する。
+- `JapanMarketAgent`（`market`, `market_agent_jp.py`）: 設計書の **Market Agent**（日本株版）。
+  日経平均・TOPIX・ドル円を取得し、リスクオン/オフのスコアと ★1〜5 の総合評価付きで
+  市場概況を要約する。※米国株（S&P500・NASDAQ・NYダウ・VIX・米金利）は別 Issue で対応予定。
 
 外側のパイプライン（`app/services/agents/graph/agent_selection.py`）が各エージェント
 ノードを依存解決して LangGraph で実行する。

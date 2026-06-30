@@ -7,9 +7,9 @@ interface Props {
 }
 
 /**
- * Phase 3.5: 実行するエージェントを複数選択する。
- * 未選択（空）の場合はフルパイプライン（全エージェント）を実行する。
- * 前提エージェントはバックエンドが自動補完するため、ここでは選択のみを扱う。
+ * 実行するエージェントを選択する。MVP では Market Agent（市場分析）のみ。
+ * 未選択（空）の場合は既定のエージェントを実行する。
+ * 今後エージェントを追加すると、ここに自動で並ぶ。
  */
 export function AgentSelector({ selected, onChange, disabled }: Props) {
   const toggle = (key: AgentKey) => {
@@ -54,8 +54,8 @@ export function AgentSelector({ selected, onChange, disabled }: Props) {
       </div>
       <p className="agent-selector-hint">
         {allSelected
-          ? '未選択のため全エージェント（フルパイプライン）を実行します'
-          : '選択したエージェントに必要な前提は自動で補完されます'}
+          ? '未選択のため既定のエージェントを実行します'
+          : '選択したエージェントを実行します'}
       </p>
     </div>
   )
