@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # External API
     # "mock": 決定論的な合成データを使用（既定・オフライン可）
     # "live": yfinance 実データ（到達不可時は合成へ自動フォールバック）
-    external_api_mode: str = "mock"
+    external_api_mode: str = "live"
     mock_data_dir: str = "../data/mock"
 
     # スクリーナーの live 取得チューニング（yfinance レートリミット対策）
