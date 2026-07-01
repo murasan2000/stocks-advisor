@@ -31,11 +31,18 @@ class Settings(BaseSettings):
     # コンテナでは DB_PATH=/app/db/stock_advisor.db を環境変数で上書きする。
     db_path: str = "../db/stock_advisor.db"
 
-    # External API (Phase 2)
-    # "mock": data/mock/ のモックデータを使用 / "live": 実API（Phase 5 で実装予定）
-    # data/ はリポジトリ直下の独立コンポーネント（将来 S3 等のストレージに置換予定）。
-    external_api_mode: str = "mock"
+    # External API
+    # "mock": 決定論的な合成データを使用（既定・オフライン可）
+    # "live": yfinance 実データ（到達不可時は合成へ自動フォールバック）
+    external_api_mode: str = "live"
     mock_data_dir: str = "../data/mock"
+
+    # スクリーナーの live 取得チューニング（yfinance レートリミット対策）
+    # 株価は一括DL、ファンダは低並列＋バックオフ再試行で全銘柄を取り切る。
+    screener_history_batch: int = 40  # yf.download 1回あたりの銘柄数
+    screener_concurrency: int = 4  # ファンダメンタルズ取得の同時数
+    screener_throttle_sec: float = 0.4  # バッチ間・リクエスト間の待機（秒）
+    screener_max_retries: int = 5  # レートリミット時の最大再試行回数
 
 
 settings = Settings()

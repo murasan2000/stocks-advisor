@@ -1,16 +1,17 @@
-import { BarChart2, Home, MessageSquare, Settings } from 'lucide-react'
+import { Bookmark, LineChart, Settings, SlidersHorizontal } from 'lucide-react'
 
 interface NavItem {
   icon: React.ReactNode
   label: string
   active?: boolean
+  disabled?: boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: <Home size={18} />, label: 'ホーム' },
-  { icon: <MessageSquare size={18} />, label: 'チャット', active: true },
-  { icon: <BarChart2 size={18} />, label: 'ポートフォリオ' },
-  { icon: <Settings size={18} />, label: '設定' },
+  { icon: <SlidersHorizontal size={18} />, label: 'スクリーニング', active: true },
+  { icon: <Bookmark size={18} />, label: 'ウォッチリスト', disabled: true },
+  { icon: <LineChart size={18} />, label: 'マーケット', disabled: true },
+  { icon: <Settings size={18} />, label: '設定', disabled: true },
 ]
 
 export function Sidebar() {
@@ -28,6 +29,8 @@ export function Sidebar() {
           <button
             key={item.label}
             className={`sidebar-nav-item ${item.active ? 'sidebar-nav-item--active' : ''}`}
+            disabled={item.disabled}
+            title={item.disabled ? '近日公開' : undefined}
           >
             {item.icon}
             <span>{item.label}</span>

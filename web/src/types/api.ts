@@ -1,70 +1,13 @@
-export const JOB_STATUSES = [
-  'pending',
-  'researching_web',
-  'researching_edinet',
-  'synthesizing',
-  'responding',
-  'running',
-  'done',
-  'error',
-] as const
+// ───────────────────────────────────────────────
+// ジョブ（スナップショット更新の進捗ポーリング用）
+// ───────────────────────────────────────────────
 
-export type JobStatus = (typeof JOB_STATUSES)[number]
+export type JobStatus = 'pending' | 'running' | 'done' | 'error'
 
-/** 選択可能なエージェント（バックエンドの AGENT_SEQUENCE と一致させる） */
-export const AGENT_OPTIONS = [
-  {
-    key: 'portfolio',
-    label: 'ポートフォリオ分析',
-    description: '楽天証券CSVから保有銘柄・評価損益を読み取ります。',
-  },
-  {
-    key: 'market_structure',
-    label: 'マーケット構造分析',
-    description:
-      '日経平均・TOPIX・為替から当日の市場構造（リスクオン/オフ）をLLMで要約します。',
-  },
-  {
-    key: 'screening',
-    label: '銘柄スクリーニング',
-    description: 'クエリと保有銘柄から分析対象の銘柄を抽出します。',
-  },
-  {
-    key: 'market_data',
-    label: '市場データ収集',
-    description: '対象銘柄の株価・チャート・企業情報を並列で取得します。',
-  },
-  {
-    key: 'technical',
-    label: 'テクニカル分析',
-    description: '移動平均・RSI・MACD・クロス検出からシグナルを判定します。',
-  },
-  {
-    key: 'fundamental',
-    label: '財務分析',
-    description: 'EDINETの財務サマリーからバリュエーションを評価します。',
-  },
-  {
-    key: 'risk',
-    label: 'リスク評価',
-    description: 'ボラティリティ・ドローダウン・集中度などのリスクを評価します。',
-  },
-  {
-    key: 'suggestion',
-    label: '投資判断・提案',
-    description: '全エージェントの結果をLLMで統合し最終レポートを生成します。',
-  },
-] as const
-
-export type AgentKey = (typeof AGENT_OPTIONS)[number]['key']
-
-export type AgentStepStatus = 'waiting' | 'running' | 'done' | 'error'
-
-/** マルチエージェント実行の1ステップ分の進捗（mode=multi のみ） */
 export interface AgentStep {
   key: string
   label: string
-  status: AgentStepStatus
+  status: 'waiting' | 'running' | 'done' | 'error'
   summary: string | null
   started_at: number | null
   finished_at: number | null
@@ -86,13 +29,134 @@ export interface CreateJobResponse {
   status: JobStatus
 }
 
-export const STATUS_LABELS: Record<JobStatus, string> = {
-  pending: '受付中…',
-  researching_web: 'Webから情報収集中…',
-  researching_edinet: '開示情報を調査中…',
-  synthesizing: '分析結果を統合中…',
-  responding: '回答を生成中…',
-  running: 'マルチエージェント分析中…',
-  done: '完了',
-  error: 'エラー',
+// ───────────────────────────────────────────────
+// スクリーナー
+// ───────────────────────────────────────────────
+
+export interface StockRow {
+  code: string
+  symbol: string
+  name: string
+  market: string
+  price: number | null
+  change_pct: number | null
+  volume: number | null
+  market_cap: number | null
+  per: number | null
+  pbr: number | null
+  dividend_yield: number | null
+  roe: number | null
+  rsi: number | null
+  high_5y: number | null
+  low_1y: number | null
+  drop_from_high_pct: number | null
+  rebound_from_low_pct: number | null
+  score: number
 }
+
+export interface ScreenerSummary {
+  count: number
+  avg_per: number | null
+  avg_dividend_yield: number | null
+  avg_roe: number | null
+  up: number
+  down: number
+  unchanged: number
+}
+
+export interface ScreenerMeta {
+  last_refresh: number | null
+  universe_count: number
+  snapshot_count: number
+  source: string
+}
+
+export interface StocksResponse {
+  stocks: StockRow[]
+  stage: number
+  next_stage: number | null
+  total: number
+  summary: ScreenerSummary
+  meta: ScreenerMeta
+}
+
+/** 絞り込み条件（クライアント状態）。未設定（undefined / 空）は無効。 */
+export interface Filters {
+  q: string
+  markets: string[]
+  perMin?: number
+  perMax?: number
+  pbrMax?: number
+  dividendYieldMin?: number
+  roeMin?: number
+  marketCapMin?: number
+  oversold: boolean
+  dropFromHighPct: number
+  reboundFromLowPct: number
+  sortBy: string
+  sortDesc: boolean
+}
+
+export const EMPTY_FILTERS: Filters = {
+  q: '',
+  markets: [],
+  oversold: false,
+  dropFromHighPct: 50,
+  reboundFromLowPct: 10,
+  sortBy: 'score',
+  sortDesc: true,
+}
+
+export const MARKET_OPTIONS = ['プライム', 'スタンダード', 'グロース'] as const
+
+export interface Preset {
+  key: string
+  label: string
+  description: string
+  apply: (f: Filters) => Filters
+}
+
+/** クイック絞り込みプリセット（サイドの条件をまとめてセット）。 */
+export const PRESETS: Preset[] = [
+  {
+    key: 'value',
+    label: '割安株',
+    description: 'PER15倍以下・PBR1.5倍以下',
+    apply: (f) => ({ ...f, perMax: 15, pbrMax: 1.5 }),
+  },
+  {
+    key: 'dividend',
+    label: '高配当',
+    description: '配当利回り3.5%以上',
+    apply: (f) => ({ ...f, dividendYieldMin: 3.5 }),
+  },
+  {
+    key: 'largecap',
+    label: '大型株',
+    description: '時価総額1兆円以上',
+    apply: (f) => ({ ...f, marketCapMin: 1_000_000_000_000 }),
+  },
+  {
+    key: 'oversold',
+    label: '下がりすぎ反発',
+    description: '5年高値から50%下落＋直近10%反発',
+    apply: (f) => ({
+      ...f,
+      oversold: true,
+      dropFromHighPct: 50,
+      reboundFromLowPct: 10,
+    }),
+  },
+  {
+    key: 'quality',
+    label: '高ROE',
+    description: 'ROE15%以上',
+    apply: (f) => ({ ...f, roeMin: 15 }),
+  },
+  {
+    key: 'bargain',
+    label: 'バーゲン',
+    description: '割安＋高配当の複合',
+    apply: (f) => ({ ...f, perMax: 12, pbrMax: 1.0, dividendYieldMin: 3 }),
+  },
+]
