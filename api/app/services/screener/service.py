@@ -7,7 +7,12 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from app.services.screener.fetcher import fetch_row
+from app.services.screener.fetcher import (
+    build_live_row,
+    fetch_fundamentals,
+    fetch_history_batch,
+    synth_row,
+)
 from app.services.screener.metrics import is_oversold_rebound
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.universe import (
@@ -23,7 +28,6 @@ from app.utils.settings import settings
 logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 100  # 段階取得 1 ステージあたりの件数
-_REFRESH_CONCURRENCY = 12  # yfinance 同時取得数
 
 _SORT_KEYS = frozenset(
     {
@@ -174,20 +178,13 @@ class ScreenerService:
         """
         universe = await self._resolve_universe()
         total = len(universe)
-        sem = asyncio.Semaphore(_REFRESH_CONCURRENCY)
-        done = 0
+        if settings.external_api_mode == "live":
+            rows = await self._refresh_live(universe, progress)
+        else:
+            rows = [synth_row(t) for t in universe]
+            if progress:
+                await progress(total, total)
 
-        async def _one(idx: int) -> StockRow | None:
-            nonlocal done
-            async with sem:
-                row = await fetch_row(universe[idx])
-            done += 1
-            if progress and (done % 25 == 0 or done == total):
-                await progress(done, total)
-            return row
-
-        results = await asyncio.gather(*(_one(i) for i in range(total)))
-        rows = [r for r in results if r is not None]
         await self._repo.replace_all(
             rows, source=settings.external_api_mode, universe_count=total
         )
@@ -198,6 +195,49 @@ class ScreenerService:
             total - len(rows),
         )
         return len(rows)
+
+    async def _refresh_live(
+        self,
+        universe: list[Ticker],
+        progress: Callable[[int, int], Awaitable[None]] | None,
+    ) -> list[StockRow]:
+        """live 取得（レートリミット対策）。
+
+        1) 株価ヒストリカルは yf.download でチャンク一括取得。
+        2) ファンダメンタルズは低並列＋スロットルで取得（株価がある銘柄のみ）。
+        """
+        symbols = [t.symbol for t in universe]
+        total = len(symbols)
+        batch = settings.screener_history_batch
+        throttle = settings.screener_throttle_sec
+
+        # 1) ヒストリカルを一括取得
+        hist: dict[str, list[float]] = {}
+        for i in range(0, total, batch):
+            chunk = symbols[i : i + batch]
+            part = await asyncio.to_thread(fetch_history_batch, chunk)
+            hist.update(part)
+            await asyncio.sleep(throttle)
+
+        # 2) 株価が取れた銘柄のみファンダを取得して行を組み立てる
+        present = [t for t in universe if t.symbol in hist]
+        n = len(present)
+        sem = asyncio.Semaphore(settings.screener_concurrency)
+        done = 0
+
+        async def _one(t: Ticker) -> StockRow | None:
+            nonlocal done
+            async with sem:
+                info = await asyncio.to_thread(fetch_fundamentals, t.symbol)
+                await asyncio.sleep(throttle)
+            row = build_live_row(t, hist.get(t.symbol, []), info)
+            done += 1
+            if progress and (done % 25 == 0 or done == n):
+                await progress(done, n)
+            return row
+
+        results = await asyncio.gather(*(_one(t) for t in present))
+        return [r for r in results if r is not None]
 
     async def query(self, filters: ScreenerFilters, stage: int) -> StocksResponse:
         """フィルタを適用し、指定ステージ分のページを返す。"""

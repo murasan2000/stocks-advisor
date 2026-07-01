@@ -1,15 +1,17 @@
 """銘柄スナップショットの取得。
 
-live: yfinance から株価・ファンダメンタルズ・ヒストリカルを取得する。
+live: yfinance から取得。yfinance のレートリミット(429)対策として
+      - 株価ヒストリカルは yf.download で一括取得（リクエスト数を削減）
+      - ファンダメンタルズ(.info)は低並列 + 指数バックオフ再試行
+  を用いる。株価が取れた銘柄は、ファンダ取得に失敗しても行を残す（件数を安定化）。
 mock: 証券コードをシードに決定論的な合成データを返す（オフライン/テスト用）。
-
-EXTERNAL_API_MODE で切替。yfinance は同期 I/O のため to_thread でオフロードする。
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from typing import Any
 
 from app.services.screener.metrics import (
@@ -35,6 +37,35 @@ class NoDataError(Exception):
 
 def _seed(code: str) -> int:
     return int.from_bytes(hashlib.sha256(code.encode()).digest()[:4], "big")
+
+
+def _is_rate_limited(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return (
+        "too many requests" in msg
+        or "rate limit" in msg
+        or "rate-limit" in msg
+        or "429" in msg
+    )
+
+
+def _with_retry(fn: Any, *, what: str) -> Any:
+    """レートリミット時に指数バックオフで再試行する（同期）。"""
+    delay = 2.0
+    last: BaseException | None = None
+    for attempt in range(settings.screener_max_retries):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - 呼び出し側で扱う
+            last = exc
+            if not _is_rate_limited(exc):
+                raise
+            if attempt < settings.screener_max_retries - 1:
+                logger.info("rate limited on %s, retry in %.0fs", what, delay)
+                time.sleep(delay)
+                delay = min(delay * 2, 30.0)
+    assert last is not None
+    raise last
 
 
 def _finalize(
@@ -93,12 +124,20 @@ def _finalize(
     )
 
 
+def _norm_pct_fraction(value: Any) -> float | None:
+    """0.025 のような比率を 2.5(%) に正規化する（既に%表記ならそのまま）。"""
+    if value is None:
+        return None
+    v = float(value)
+    return round(v * 100, 2) if abs(v) < 1 else round(v, 2)
+
+
 # ---------------------------------------------------------------------------
 # mock（決定論的合成）
 # ---------------------------------------------------------------------------
 
 
-def _synth_row(ticker: Ticker) -> StockRow:
+def synth_row(ticker: Ticker) -> StockRow:
     s = _seed(ticker.code)
     price = round(500 + s % 9500 + (s % 100) / 100, 1)
     change_pct = round(((s >> 8) % 600 - 300) / 100, 2)
@@ -132,36 +171,77 @@ def _synth_row(ticker: Ticker) -> StockRow:
 # ---------------------------------------------------------------------------
 
 
-def _norm_pct_fraction(value: Any) -> float | None:
-    """0.025 のような比率を 2.5(%) に正規化する（既に%表記ならそのまま）。"""
-    if value is None:
-        return None
-    v = float(value)
-    return round(v * 100, 2) if abs(v) < 1 else round(v, 2)
+def fetch_history_batch(symbols: list[str]) -> dict[str, list[float]]:
+    """複数銘柄の終値系列を yf.download で一括取得する（リクエスト数削減）。
 
-
-def _fetch_live_sync(ticker: Ticker) -> StockRow:
+    取得できなかった銘柄は結果に含めない。
+    """
     import yfinance as yf
 
-    t = yf.Ticker(ticker.symbol)
-    info: dict[str, Any] = t.info or {}
-    hist = t.history(period=_HISTORY_PERIOD, auto_adjust=False)
+    if not symbols:
+        return {}
 
-    closes: list[float] = []
-    if not hist.empty:
-        closes = [float(c) for c in hist["Close"].tolist() if c == c]  # NaN 除外
+    df = _with_retry(
+        lambda: yf.download(
+            symbols,
+            period=_HISTORY_PERIOD,
+            interval="1d",
+            group_by="ticker",
+            auto_adjust=False,
+            threads=False,
+            progress=False,
+        ),
+        what="history batch",
+    )
+    out: dict[str, list[float]] = {}
+    if df is None or df.empty:
+        return out
+    multi = len(symbols) > 1
+    for sym in symbols:
+        try:
+            sub = df[sym] if multi else df
+            closes = [float(c) for c in sub["Close"].tolist() if c == c]
+        except Exception:
+            closes = []
+        if closes:
+            out[sym] = closes
+    return out
+
+
+def fetch_fundamentals(symbol: str) -> dict[str, Any]:
+    """1銘柄のファンダメンタルズ(.info)を取得する（ベストエフォート）。
+
+    レートリミットは再試行。最終的に失敗しても {} を返し、株価情報だけで行を残す。
+    """
+    import yfinance as yf
+
+    try:
+        info = _with_retry(lambda: yf.Ticker(symbol).info, what=f"info {symbol}")
+        return info or {}
+    except Exception as exc:  # noqa: BLE001 - ベストエフォート
+        logger.info("fundamentals unavailable for %s: %s", symbol, exc)
+        return {}
+
+
+def build_live_row(
+    ticker: Ticker, closes: list[float], info: dict[str, Any]
+) -> StockRow | None:
+    """一括取得した終値系列＋ファンダから StockRow を組み立てる。
+
+    価格データが全く無い（上場廃止等）場合は None を返す。
+    """
     info_price = info.get("currentPrice") or info.get("regularMarketPrice")
     if not closes and not info_price:
-        # 価格もヒストリカルも無い = 上場廃止/未上場。スキップ対象として通知。
-        raise NoDataError(ticker.symbol)
+        return None
+
     price = float(info_price or 0) or (closes[-1] if closes else None)
     change_pct = info.get("regularMarketChangePercent")
     if change_pct is None and len(closes) >= 2 and closes[-2]:
         change_pct = (closes[-1] - closes[-2]) / closes[-2] * 100
     high_5y = max(closes) if closes else None
     low_1y = min(closes[-_ONE_YEAR_TRADING_DAYS:]) if closes else None
-
     name = str(info.get("shortName") or info.get("longName") or ticker.name)
+
     return _finalize(
         Ticker(code=ticker.code, name=name, market=ticker.market),
         price=round(price, 2) if price else None,
@@ -180,24 +260,3 @@ def _fetch_live_sync(ticker: Ticker) -> StockRow:
         high_5y=round(high_5y, 2) if high_5y else None,
         low_1y=round(low_1y, 2) if low_1y else None,
     )
-
-
-async def fetch_row(ticker: Ticker) -> StockRow | None:
-    """1 銘柄のスナップショットを取得する。
-
-    mock: 決定論的合成を返す。
-    live: yfinance から取得。価格データが無い（上場廃止等）銘柄や取得失敗は
-          None を返してスキップする（偽の合成データを入れない）。
-    """
-    if settings.external_api_mode != "live":
-        return _synth_row(ticker)
-    import asyncio
-
-    try:
-        return await asyncio.to_thread(_fetch_live_sync, ticker)
-    except NoDataError:
-        logger.info("skip %s: no price data (delisted?)", ticker.symbol)
-        return None
-    except Exception as exc:
-        logger.warning("skip %s: live fetch failed: %s", ticker.symbol, exc)
-        return None
