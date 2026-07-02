@@ -123,6 +123,8 @@ export function ChatModal({ chat }: { chat: ChatState }) {
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      // IME 変換確定の Enter では送信しない（keyCode 229 は Safari 対策）
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return
       e.preventDefault()
       void chat.send()
     }
