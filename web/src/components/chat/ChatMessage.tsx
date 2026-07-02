@@ -4,7 +4,9 @@ export function ChatMessage({ message }: { message: Message }) {
   const isUser = message.role === 'user'
   return (
     <div className={`chat-msg ${isUser ? 'chat-msg--user' : 'chat-msg--ai'}`}>
-      <div className="chat-msg-bubble">
+      <div
+        className={`chat-msg-bubble ${message.isError ? 'chat-msg-bubble--error' : ''}`}
+      >
         {message.pending ? (
           <span className="chat-typing" aria-label="生成中">
             <span />

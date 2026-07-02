@@ -8,10 +8,15 @@ import pytest
 
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import PAGE_SIZE, ScreenerFilters, ScreenerService
+from app.utils.settings import settings
 
 
 @pytest.fixture
-async def service(tmp_path: Path) -> ScreenerService:
+async def service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> ScreenerService:
+    # .env の既定が live でもテストはネットワーク非依存の mock で実行する
+    monkeypatch.setattr(settings, "external_api_mode", "mock")
     repo = ScreenerRepository(str(tmp_path / "screener.db"))
     await repo.initialize()
     svc = ScreenerService(repo)

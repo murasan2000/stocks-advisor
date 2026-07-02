@@ -30,6 +30,31 @@ export interface CreateJobResponse {
 }
 
 // ───────────────────────────────────────────────
+// チャット履歴
+// ───────────────────────────────────────────────
+
+export interface Conversation {
+  conversation_id: string
+  title: string
+  created_at: number
+  updated_at: number
+}
+
+export interface ConversationMessage {
+  message_id: string
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: number
+}
+
+export interface SendMessageResponse {
+  conversation: Conversation
+  user_message: ConversationMessage
+  assistant_message: ConversationMessage
+}
+
+// ───────────────────────────────────────────────
 // スクリーナー
 // ───────────────────────────────────────────────
 
