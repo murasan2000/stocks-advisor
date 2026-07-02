@@ -1,8 +1,11 @@
 import type {
+  Conversation,
+  ConversationMessage,
   CreateJobResponse,
   Filters,
   Job,
   ScreenerMeta,
+  SendMessageResponse,
   StocksResponse,
 } from '../types/api'
 
@@ -60,4 +63,44 @@ export function refreshSnapshot(): Promise<CreateJobResponse> {
 
 export function getJob(jobId: string): Promise<Job> {
   return request<Job>(`/jobs/${jobId}`)
+}
+
+// ───────────────────────────────────────────────
+// チャット履歴
+// ───────────────────────────────────────────────
+
+export function createConversation(): Promise<Conversation> {
+  return request<Conversation>('/chat/conversations', { method: 'POST' })
+}
+
+export function getConversations(q = '', limit = 30): Promise<Conversation[]> {
+  const p = new URLSearchParams({ limit: String(limit) })
+  if (q.trim()) p.set('q', q.trim())
+  return request<Conversation[]>(`/chat/conversations?${p.toString()}`)
+}
+
+export function deleteConversation(conversationId: string): Promise<void> {
+  return fetch(`${BASE_URL}/chat/conversations/${conversationId}`, {
+    method: 'DELETE',
+  }).then((res) => {
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+  })
+}
+
+export function getMessages(
+  conversationId: string,
+): Promise<ConversationMessage[]> {
+  return request<ConversationMessage[]>(
+    `/chat/conversations/${conversationId}/messages`,
+  )
+}
+
+export function postMessage(
+  conversationId: string,
+  content: string,
+): Promise<SendMessageResponse> {
+  return request<SendMessageResponse>(
+    `/chat/conversations/${conversationId}/messages`,
+    { method: 'POST', body: JSON.stringify({ content }) },
+  )
 }

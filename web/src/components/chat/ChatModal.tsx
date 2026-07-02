@@ -1,6 +1,7 @@
-import { Send, Sparkles, Trash2, X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { ArrowLeft, History, Send, Sparkles, SquarePen, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChatRect, useChat } from '../../hooks/useChat'
+import { fmtTimestamp } from '../../utils/format'
 import { ChatMessage } from './ChatMessage'
 
 type ChatState = ReturnType<typeof useChat>
@@ -62,7 +63,8 @@ export function ChatModal({ chat }: { chat: ChatState }) {
     startY: number
     rect: ChatRect
   } | null>(null)
-  const { isOpen, close, rect, setRect } = chat
+  const [historyQuery, setHistoryQuery] = useState('')
+  const { isOpen, close, rect, setRect, view, setView, loadConversations } = chat
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -77,6 +79,15 @@ export function ChatModal({ chat }: { chat: ChatState }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [isOpen, close])
+
+  // 履歴ビューを開いたとき・検索語変更時に会話一覧を取得（入力はデバウンス）
+  useEffect(() => {
+    if (!isOpen || view !== 'history') return
+    const timer = setTimeout(() => {
+      void loadConversations(historyQuery)
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [isOpen, view, historyQuery, loadConversations])
 
   if (!isOpen) return null
 
@@ -153,19 +164,42 @@ export function ChatModal({ chat }: { chat: ChatState }) {
         >
           <div className="chat-title">
             <Sparkles size={16} />
-            <span>AIアシスタント</span>
+            <span>{view === 'history' ? 'チャット履歴' : 'AIアシスタント'}</span>
           </div>
           <div className="chat-header-actions">
-            <button
-              type="button"
-              className="chat-icon-btn"
-              onClick={chat.clear}
-              disabled={chat.messages.length === 0}
-              aria-label="会話をクリア"
-              title="会話をクリア"
-            >
-              <Trash2 size={16} />
-            </button>
+            {view === 'chat' ? (
+              <>
+                <button
+                  type="button"
+                  className="chat-icon-btn"
+                  onClick={chat.newConversation}
+                  disabled={chat.messages.length === 0}
+                  aria-label="新しい会話"
+                  title="新しい会話"
+                >
+                  <SquarePen size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="chat-icon-btn"
+                  onClick={() => setView('history')}
+                  aria-label="チャット履歴"
+                  title="チャット履歴"
+                >
+                  <History size={16} />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="chat-icon-btn"
+                onClick={() => setView('chat')}
+                aria-label="チャットに戻る"
+                title="チャットに戻る"
+              >
+                <ArrowLeft size={16} />
+              </button>
+            )}
             <button
               type="button"
               className="chat-icon-btn"
@@ -178,40 +212,96 @@ export function ChatModal({ chat }: { chat: ChatState }) {
           </div>
         </header>
 
-        <div className="chat-body">
-          {chat.messages.length === 0 ? (
-            <div className="chat-empty">
-              <Sparkles size={28} />
-              <p>投資の疑問や気になる銘柄について質問できます</p>
-              <span className="chat-empty-note">
-                ※ エージェント接続は今後のフェーズで実装予定
-              </span>
+        {view === 'history' ? (
+          <div className="chat-history">
+            <input
+              type="text"
+              className="chat-history-search"
+              placeholder="会話を検索"
+              value={historyQuery}
+              onChange={(e) => setHistoryQuery(e.target.value)}
+            />
+            <div className="chat-history-list">
+              {chat.historyLoading ? (
+                <p className="chat-history-empty">読み込み中…</p>
+              ) : chat.conversations.length === 0 ? (
+                <p className="chat-history-empty">
+                  {historyQuery ? '一致する会話がありません' : '履歴はありません'}
+                </p>
+              ) : (
+                chat.conversations.map((c) => (
+                  <div
+                    key={c.conversation_id}
+                    className={`chat-conv-item ${
+                      c.conversation_id === chat.conversationId
+                        ? 'chat-conv-item--active'
+                        : ''
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      className="chat-conv-main"
+                      onClick={() => void chat.selectConversation(c.conversation_id)}
+                    >
+                      <span className="chat-conv-title">
+                        {c.title || '（無題の会話）'}
+                      </span>
+                      <span className="chat-conv-time">
+                        {fmtTimestamp(c.updated_at)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-icon-btn"
+                      onClick={() => void chat.removeConversation(c.conversation_id)}
+                      aria-label="この会話を削除"
+                      title="この会話を削除"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
-          ) : (
-            chat.messages.map((m) => <ChatMessage key={m.id} message={m} />)
-          )}
-          <div ref={bottomRef} />
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="chat-body">
+              {chat.messages.length === 0 ? (
+                <div className="chat-empty">
+                  <Sparkles size={28} />
+                  <p>投資の疑問や気になる銘柄について質問できます</p>
+                  <span className="chat-empty-note">
+                    ※ エージェント接続は今後のフェーズで実装予定
+                  </span>
+                </div>
+              ) : (
+                chat.messages.map((m) => <ChatMessage key={m.id} message={m} />)
+              )}
+              <div ref={bottomRef} />
+            </div>
 
-        <footer className="chat-footer">
-          <textarea
-            className="chat-input"
-            placeholder="メッセージを入力（Enterで送信 / Shift+Enterで改行）"
-            value={chat.input}
-            onChange={(e) => chat.setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            rows={1}
-          />
-          <button
-            type="button"
-            className="chat-send"
-            onClick={() => void chat.send()}
-            disabled={chat.busy || !chat.input.trim()}
-            aria-label="送信"
-          >
-            <Send size={16} />
-          </button>
-        </footer>
+            <footer className="chat-footer">
+              <textarea
+                className="chat-input"
+                placeholder="メッセージを入力（Enterで送信 / Shift+Enterで改行）"
+                value={chat.input}
+                onChange={(e) => chat.setInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                rows={1}
+              />
+              <button
+                type="button"
+                className="chat-send"
+                onClick={() => void chat.send()}
+                disabled={chat.busy || !chat.input.trim()}
+                aria-label="送信"
+              >
+                <Send size={16} />
+              </button>
+            </footer>
+          </>
+        )}
       </div>
     </div>
   )

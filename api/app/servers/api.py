@@ -8,6 +8,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Response
 
+from app.services.chat.repository import ChatRepository
+from app.services.chat.service import send_message
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_refresh_job
 from app.services.screener.repository import ScreenerRepository
@@ -18,6 +20,12 @@ from app.types.api import (
     ScreenerMeta,
     StocksResponse,
 )
+from app.types.chat import (
+    Conversation,
+    Message,
+    SendMessageRequest,
+    SendMessageResponse,
+)
 from app.types.jobs import Job, JobStatus
 from app.utils.logging_config import setup_logging
 from app.utils.settings import settings
@@ -27,6 +35,7 @@ logger = logging.getLogger(__name__)
 _job_repo = JobRepository(settings.db_path)
 _screener_repo = ScreenerRepository(settings.db_path)
 _screener = ScreenerService(_screener_repo)
+_chat_repo = ChatRepository(settings.db_path)
 
 
 @asynccontextmanager
@@ -34,6 +43,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     setup_logging()
     await _job_repo.initialize()
     await _screener_repo.initialize()
+    await _chat_repo.initialize()
     # mock モードかつキャッシュが空なら、合成データで即時シードする（開発用）。
     if settings.external_api_mode != "live" and await _screener_repo.count() == 0:
         logger.info("seeding screener snapshot with mock data")
@@ -118,6 +128,65 @@ async def screener_refresh() -> CreateJobResponse:
     await _job_repo.create(job_id, "screener_refresh")
     asyncio.create_task(run_refresh_job(job_id, _job_repo, _screener))
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
+
+
+# ---------------------------------------------------------------------------
+# チャット（会話・メッセージ履歴）
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/api/v1/chat/conversations", response_model=Conversation, status_code=201
+)
+async def create_conversation() -> Conversation:
+    """新しい会話を作成する。タイトルは初回メッセージから自動生成される。"""
+    return await _chat_repo.create_conversation()
+
+
+@app.get("/api/v1/chat/conversations", response_model=list[Conversation])
+async def list_conversations(
+    limit: int = Query(default=30, ge=1, le=100),
+    q: str | None = Query(default=None),
+) -> list[Conversation]:
+    """会話一覧を更新日時の新しい順で返す。q でタイトル部分一致検索。"""
+    return await _chat_repo.list_conversations(limit=limit, query=q)
+
+
+@app.delete("/api/v1/chat/conversations/{conversation_id}", status_code=204)
+async def delete_conversation(conversation_id: str) -> Response:
+    """会話と配下のメッセージを削除する。"""
+    deleted = await _chat_repo.delete_conversation(conversation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return Response(status_code=204)
+
+
+@app.get(
+    "/api/v1/chat/conversations/{conversation_id}/messages",
+    response_model=list[Message],
+)
+async def list_messages(conversation_id: str) -> list[Message]:
+    """会話の過去メッセージを時系列で返す。"""
+    if await _chat_repo.get_conversation(conversation_id) is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return await _chat_repo.list_messages(conversation_id)
+
+
+@app.post(
+    "/api/v1/chat/conversations/{conversation_id}/messages",
+    response_model=SendMessageResponse,
+)
+async def post_message(
+    conversation_id: str, request: SendMessageRequest
+) -> SendMessageResponse:
+    """ユーザー発言を保存し、AI 応答（現状モック）を生成・保存して返す。
+
+    TODO(Phase 4/5): 応答生成を親エージェント（Job 実行）に差し替える。
+    """
+    result = await send_message(_chat_repo, conversation_id, request.content)
+    if result is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return result
 
 
 # ---------------------------------------------------------------------------
