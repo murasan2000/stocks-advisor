@@ -6,35 +6,41 @@ from pydantic import BaseModel
 
 
 class JobStatus(StrEnum):
+    """ジョブのライフサイクル（粗いステータス）。
+
+    細かい進捗は progress（AgentStep.status = AgentPhase）で表現する。
+    """
+
     PENDING = "pending"
-    # シングルエージェント（mode=single）のフェーズ別ステータス
-    RESEARCHING_WEB = "researching_web"
-    RESEARCHING_EDINET = "researching_edinet"
-    SYNTHESIZING = "synthesizing"
-    RESPONDING = "responding"
-    # マルチエージェント（mode=multi）は粗いステータス + progress で詳細を持つ
     RUNNING = "running"
     DONE = "done"
     ERROR = "error"
 
 
-class AgentStepStatus(StrEnum):
+class AgentPhase(StrEnum):
+    """エージェント実行ステップの状態・フェーズ。
+
+    Job の progress（各ステップ）に付与し、UI の進捗表示に用いる。
+    """
+
     WAITING = "waiting"
     RUNNING = "running"
+    DELEGATING = "delegating"  # 親が子エージェントへ委任
+    SEARCHING = "searching"  # データ収集・検索
+    GENERATING_REPORT = "generating_report"  # レポート/回答生成
     DONE = "done"
     ERROR = "error"
 
 
 class AgentStep(BaseModel):
-    """マルチエージェント実行の1ステップ分の進捗。
+    """ジョブ進捗の 1 ステップ分。
 
-    summary には各エージェントの中間結果の要約が入り、
-    フロントエンドのホバー/クリックで表示される。
+    summary には中間結果の要約が入り、フロントの進捗表示に使われる。
     """
 
-    key: str  # 例: "portfolio"
-    label: str  # 例: "ポートフォリオ分析"
-    status: AgentStepStatus = AgentStepStatus.WAITING
+    key: str  # 例: "orchestrator" / "general" / "company"
+    label: str  # 例: "意図判定" / "一般質問エージェント"
+    status: AgentPhase = AgentPhase.WAITING
     summary: str | None = None
     started_at: float | None = None
     finished_at: float | None = None
@@ -46,6 +52,7 @@ class Job(BaseModel):
     status: JobStatus
     result: str | None = None
     error: str | None = None
-    progress: list[AgentStep] | None = None  # mode=multi のときのみ設定
+    progress: list[AgentStep] | None = None
     created_at: float
     updated_at: float
+    completed_at: float | None = None  # done/error になった時刻
