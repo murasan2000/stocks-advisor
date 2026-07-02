@@ -1,11 +1,15 @@
+import { AiButton } from './components/chat/AiButton'
+import { ChatModal } from './components/chat/ChatModal'
 import { Sidebar } from './components/Sidebar'
 import { FilterPanel } from './components/screener/FilterPanel'
 import { ScreenerHeader } from './components/screener/ScreenerHeader'
 import { StatCards } from './components/screener/StatCards'
 import { StockTable } from './components/screener/StockTable'
+import { useChat } from './hooks/useChat'
 import { useScreener } from './hooks/useScreener'
 
 export default function App() {
+  const chat = useChat()
   const {
     filters,
     setFilters,
@@ -78,6 +82,9 @@ export default function App() {
           ※本情報は投資判断の参考であり、投資勧誘を目的としたものではありません。投資判断はご自身の責任で行ってください。
         </p>
       </main>
+
+      <AiButton onClick={chat.open} hidden={chat.isOpen} />
+      <ChatModal chat={chat} />
     </div>
   )
 }
