@@ -1,6 +1,14 @@
 import { useCallback, useState } from 'react'
 
-export type ChatSize = 'sm' | 'md' | 'lg'
+/** モーダルの矩形。x/y は画面右下からのオフセット（右下アンカー）。 */
+export interface ChatRect {
+  w: number
+  h: number
+  x: number
+  y: number
+}
+
+export const DEFAULT_CHAT_RECT: ChatRect = { w: 460, h: 620, x: 22, y: 22 }
 
 export interface ChatMessage {
   id: string
@@ -25,13 +33,13 @@ function mockReply(question: string): string {
 }
 
 /**
- * チャットの状態管理。開閉・サイズ・入力内容・メッセージを保持する
+ * チャットの状態管理。開閉・位置/サイズ・入力内容・メッセージを保持する
  * （App 直下に置くことでモーダルを閉じても状態が維持される）。
  * 送信は現状モック応答。将来は送信→Job作成→進捗ポーリングに差し替える。
  */
 export function useChat() {
   const [isOpen, setIsOpen] = useState(false)
-  const [size, setSize] = useState<ChatSize>('md')
+  const [rect, setRect] = useState<ChatRect>(DEFAULT_CHAT_RECT)
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [busy, setBusy] = useState(false)
@@ -70,8 +78,8 @@ export function useChat() {
 
   return {
     isOpen,
-    size,
-    setSize,
+    rect,
+    setRect,
     input,
     setInput,
     messages,

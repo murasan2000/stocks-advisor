@@ -1,24 +1,114 @@
 import { Send, Sparkles, Trash2, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import type { ChatSize, useChat } from '../../hooks/useChat'
+import type { ChatRect, useChat } from '../../hooks/useChat'
 import { ChatMessage } from './ChatMessage'
 
 type ChatState = ReturnType<typeof useChat>
 
-const SIZES: { key: ChatSize; label: string }[] = [
-  { key: 'sm', label: 'S' },
-  { key: 'md', label: 'M' },
-  { key: 'lg', label: 'L' },
-]
+const MIN_W = 320
+const MIN_H = 380
+const MARGIN = 8
+const MOBILE_BREAKPOINT = 700 // これ未満は全画面表示（ドラッグ/リサイズ無効）
+
+/** move=ヘッダードラッグ移動 / それ以外=辺・角のリサイズ（n=上, s=下, e=右, w=左） */
+type DragMode = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
+const RESIZE_HANDLES: DragMode[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+
+/**
+ * 右下アンカー（x=右, y=下オフセット）の矩形にドラッグ/リサイズを適用する。
+ * 左/上辺は反対側の辺を固定したまま、右/下辺はアンカーごと追従して伸縮する。
+ */
+function applyDrag(
+  mode: DragMode,
+  start: ChatRect,
+  dx: number,
+  dy: number,
+  vw: number,
+  vh: number,
+): ChatRect {
+  let { w, h, x, y } = start
+  if (mode === 'move') {
+    x = clamp(start.x - dx, MARGIN, Math.max(MARGIN, vw - start.w - MARGIN))
+    y = clamp(start.y - dy, MARGIN, Math.max(MARGIN, vh - start.h - MARGIN))
+    return { w, h, x, y }
+  }
+  if (mode.includes('w')) {
+    w = clamp(start.w - dx, MIN_W, vw - start.x - MARGIN)
+  }
+  if (mode.includes('e')) {
+    const d = clamp(dx, MIN_W - start.w, start.x - MARGIN)
+    w = start.w + d
+    x = start.x - d
+  }
+  if (mode.includes('n')) {
+    h = clamp(start.h - dy, MIN_H, vh - start.y - MARGIN)
+  }
+  if (mode.includes('s')) {
+    const d = clamp(dy, MIN_H - start.h, start.y - MARGIN)
+    h = start.h + d
+    y = start.y - d
+  }
+  return { w, h, x, y }
+}
 
 export function ChatModal({ chat }: { chat: ChatState }) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{
+    mode: DragMode
+    startX: number
+    startY: number
+    rect: ChatRect
+  } | null>(null)
+  const { isOpen, close, rect, setRect } = chat
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chat.messages])
 
-  if (!chat.isOpen) return null
+  // Escape キーで閉じる（外側クリックと同じ挙動）
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, close])
+
+  if (!isOpen) return null
+
+  const startDrag = (e: React.PointerEvent<HTMLElement>) => {
+    const mode = e.currentTarget.dataset.dragMode as DragMode | undefined
+    if (!mode) return
+    if (window.innerWidth < MOBILE_BREAKPOINT) return // モバイルは全画面固定
+    // ヘッダー上のボタン類はドラッグ対象にしない
+    if (mode === 'move' && (e.target as HTMLElement).closest('button')) return
+    dragRef.current = { mode, startX: e.clientX, startY: e.clientY, rect }
+    e.currentTarget.setPointerCapture(e.pointerId)
+    e.preventDefault()
+  }
+
+  const onDragMove = (e: React.PointerEvent<HTMLElement>) => {
+    const d = dragRef.current
+    if (!d) return
+    setRect(
+      applyDrag(
+        d.mode,
+        d.rect,
+        e.clientX - d.startX,
+        e.clientY - d.startY,
+        window.innerWidth,
+        window.innerHeight,
+      ),
+    )
+  }
+
+  const endDrag = () => {
+    dragRef.current = null
+  }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -28,27 +118,44 @@ export function ChatModal({ chat }: { chat: ChatState }) {
   }
 
   return (
-    <div className="chat-overlay" role="dialog" aria-label="AIアシスタント">
-      <div className={`chat-modal chat-modal--${chat.size}`}>
-        <header className="chat-header">
+    <div
+      className="chat-overlay"
+      role="dialog"
+      aria-label="AIアシスタント"
+      // モーダル外クリックで閉じる（×ボタンと同じ挙動）
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) close()
+      }}
+    >
+      <div
+        className="chat-modal"
+        style={{ width: rect.w, height: rect.h, right: rect.x, bottom: rect.y }}
+      >
+        {RESIZE_HANDLES.map((mode) => (
+          <div
+            key={mode}
+            className={`chat-resize chat-resize--${mode}`}
+            data-drag-mode={mode}
+            onPointerDown={startDrag}
+            onPointerMove={onDragMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+          />
+        ))}
+
+        <header
+          className="chat-header"
+          data-drag-mode="move"
+          onPointerDown={startDrag}
+          onPointerMove={onDragMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        >
           <div className="chat-title">
             <Sparkles size={16} />
             <span>AIアシスタント</span>
           </div>
           <div className="chat-header-actions">
-            <div className="chat-size-toggle" role="group" aria-label="サイズ切替">
-              {SIZES.map((s) => (
-                <button
-                  key={s.key}
-                  type="button"
-                  className={chat.size === s.key ? 'active' : ''}
-                  onClick={() => chat.setSize(s.key)}
-                  aria-pressed={chat.size === s.key}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
             <button
               type="button"
               className="chat-icon-btn"
@@ -62,7 +169,7 @@ export function ChatModal({ chat }: { chat: ChatState }) {
             <button
               type="button"
               className="chat-icon-btn"
-              onClick={chat.close}
+              onClick={close}
               aria-label="閉じる"
               title="閉じる"
             >
