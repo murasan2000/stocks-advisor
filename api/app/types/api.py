@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from app.types.jobs import JobStatus
 
@@ -8,6 +10,20 @@ from app.types.jobs import JobStatus
 class CreateJobResponse(BaseModel):
     job_id: str
     status: JobStatus
+
+
+class AgentJobRequest(BaseModel):
+    """エージェントジョブの作成リクエスト。
+
+    kind でエージェントを選ぶ:
+      - "auto":    親エージェントが意図判定して委任
+      - "general": 一般質問エージェントを直接実行（独立API）
+      - "company": 企業分析エージェントを直接実行（独立API）
+    """
+
+    kind: Literal["auto", "general", "company"] = "auto"
+    query: str = Field(min_length=1, max_length=4000)
+    tickers: list[str] = Field(default_factory=list)
 
 
 class HealthResponse(BaseModel):

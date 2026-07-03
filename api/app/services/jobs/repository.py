@@ -11,20 +11,25 @@ from app.types.jobs import AgentStep, Job, JobStatus
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS jobs (
-    job_id     TEXT PRIMARY KEY,
-    query      TEXT NOT NULL,
-    status     TEXT NOT NULL DEFAULT 'pending',
-    result     TEXT,
-    error      TEXT,
-    progress   TEXT,
-    created_at REAL NOT NULL,
-    updated_at REAL NOT NULL
+    job_id       TEXT PRIMARY KEY,
+    query        TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    result       TEXT,
+    error        TEXT,
+    progress     TEXT,
+    created_at   REAL NOT NULL,
+    updated_at   REAL NOT NULL,
+    completed_at REAL
 )
 """
 
 _SELECT_COLUMNS = (
-    "job_id, query, status, result, error, progress, created_at, updated_at"
+    "job_id, query, status, result, error, progress,"
+    " created_at, updated_at, completed_at"
 )
+
+# done / error になった時点で completed_at を確定させる終端ステータス。
+_TERMINAL_STATUSES = (JobStatus.DONE, JobStatus.ERROR)
 
 # クラス内に list() メソッドがあるため、シグネチャでは組み込み list を直接書けない
 _AgentSteps = list[AgentStep]
@@ -46,6 +51,9 @@ def _row_to_job(row: aiosqlite.Row) -> Job:
         progress=progress,
         created_at=float(row["created_at"]),
         updated_at=float(row["updated_at"]),
+        completed_at=(
+            float(row["completed_at"]) if row["completed_at"] is not None else None
+        ),
     )
 
 
@@ -58,11 +66,13 @@ class JobRepository:
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(_CREATE_TABLE)
-            # 既存DB（progress カラムなし）へのマイグレーション
+            # 既存DB への追加カラムのマイグレーション
             async with db.execute("PRAGMA table_info(jobs)") as cursor:
                 columns = {str(row[1]) for row in await cursor.fetchall()}
             if "progress" not in columns:
                 await db.execute("ALTER TABLE jobs ADD COLUMN progress TEXT")
+            if "completed_at" not in columns:
+                await db.execute("ALTER TABLE jobs ADD COLUMN completed_at REAL")
             await db.commit()
 
     async def ping(self) -> bool:
@@ -120,19 +130,25 @@ class JobRepository:
         result: str | None = None,
         error: str | None = None,
     ) -> None:
-        """ステータスを更新する。result/error は渡した場合のみ上書きする。"""
+        """ステータスを更新する。
+
+        result/error は渡した場合のみ上書きする。done/error への遷移時は
+        completed_at を確定させる。
+        """
         now = time.time()
+        completed_at = now if status in _TERMINAL_STATUSES else None
         async with aiosqlite.connect(self._db_path) as db:
             if result is not None or error is not None:
                 await db.execute(
-                    "UPDATE jobs SET status=?, result=?, error=?, updated_at=?"
-                    " WHERE job_id=?",
-                    (status, result, error, now, job_id),
+                    "UPDATE jobs SET status=?, result=?, error=?,"
+                    " updated_at=?, completed_at=? WHERE job_id=?",
+                    (status, result, error, now, completed_at, job_id),
                 )
             else:
                 await db.execute(
-                    "UPDATE jobs SET status=?, updated_at=? WHERE job_id=?",
-                    (status, now, job_id),
+                    "UPDATE jobs SET status=?, updated_at=?, completed_at=?"
+                    " WHERE job_id=?",
+                    (status, now, completed_at, job_id),
                 )
             await db.commit()
 

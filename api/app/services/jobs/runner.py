@@ -12,7 +12,7 @@ import time
 
 from app.services.jobs.repository import JobRepository
 from app.services.screener.service import ScreenerService
-from app.types.jobs import AgentStep, AgentStepStatus, JobStatus
+from app.types.jobs import AgentPhase, AgentStep, JobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ async def run_refresh_job(
     """スクリーナーのスナップショット更新をバックグラウンドで実行する。"""
     log = logging.LoggerAdapter(logger, {"job_id": job_id})
     step = AgentStep(key="refresh", label="スナップショット更新")
-    step.status = AgentStepStatus.RUNNING
+    step.status = AgentPhase.RUNNING
     step.started_at = time.time()
     await repo.update_status(job_id, JobStatus.RUNNING)
     await repo.update_progress(job_id, [step])
@@ -40,7 +40,7 @@ async def run_refresh_job(
         count = await asyncio.wait_for(
             screener.refresh(progress=_progress), timeout=_JOB_TIMEOUT
         )
-        step.status = AgentStepStatus.DONE
+        step.status = AgentPhase.DONE
         step.summary = f"{count} 銘柄を更新しました"
         step.finished_at = time.time()
         await repo.update_progress(job_id, [step])
@@ -48,13 +48,13 @@ async def run_refresh_job(
         log.info("refresh job completed: %d stocks", count)
     except TimeoutError:
         log.error("refresh job timed out")
-        step.status = AgentStepStatus.ERROR
+        step.status = AgentPhase.ERROR
         step.finished_at = time.time()
         await repo.update_progress(job_id, [step])
         await repo.update_status(job_id, JobStatus.ERROR, error="タイムアウトしました")
     except Exception as exc:
         log.exception("refresh job failed: %s", exc)
-        step.status = AgentStepStatus.ERROR
+        step.status = AgentPhase.ERROR
         step.finished_at = time.time()
         await repo.update_progress(job_id, [step])
         await repo.update_status(job_id, JobStatus.ERROR, error=str(exc))

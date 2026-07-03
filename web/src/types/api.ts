@@ -4,10 +4,31 @@
 
 export type JobStatus = 'pending' | 'running' | 'done' | 'error'
 
+/** エージェント実行ステップのフェーズ（バックエンド AgentPhase と一致） */
+export type AgentPhase =
+  | 'waiting'
+  | 'running'
+  | 'delegating'
+  | 'searching'
+  | 'generating_report'
+  | 'done'
+  | 'error'
+
+/** フェーズ -> 表示ラベル（進捗UIで使用予定 / Phase 8） */
+export const PHASE_LABELS: Record<AgentPhase, string> = {
+  waiting: '待機中',
+  running: '実行中',
+  delegating: '委任中',
+  searching: '情報収集中',
+  generating_report: 'レポート生成中',
+  done: '完了',
+  error: 'エラー',
+}
+
 export interface AgentStep {
   key: string
   label: string
-  status: 'waiting' | 'running' | 'done' | 'error'
+  status: AgentPhase
   summary: string | null
   started_at: number | null
   finished_at: number | null
@@ -22,6 +43,7 @@ export interface Job {
   progress: AgentStep[] | null
   created_at: number
   updated_at: number
+  completed_at: number | null
 }
 
 export interface CreateJobResponse {

@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Response
 
+from app.services.agents.runner import run_agent_job
 from app.services.chat.repository import ChatRepository
 from app.services.chat.service import send_message
 from app.services.jobs.repository import JobRepository
@@ -15,6 +16,7 @@ from app.services.jobs.runner import run_refresh_job
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
 from app.types.api import (
+    AgentJobRequest,
     CreateJobResponse,
     HealthResponse,
     ScreenerMeta,
@@ -190,7 +192,29 @@ async def post_message(
 
 
 # ---------------------------------------------------------------------------
-# ジョブ（汎用バックグラウンド実行基盤 / 将来のエージェント実行でも利用）
+# エージェント（親オーケストレーター / 子エージェントの単体実行）
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/v1/jobs", response_model=CreateJobResponse, status_code=202)
+async def create_agent_job(request: AgentJobRequest) -> CreateJobResponse:
+    """エージェントジョブを作成し、バックグラウンドで実行する。
+
+    進捗・結果は GET /api/v1/jobs/{job_id} でポーリングする（Job 非同期方式）。
+    kind=general/company は各子エージェントの独立実行に相当する。
+    """
+    job_id = str(uuid.uuid4())
+    await _job_repo.create(job_id, request.query)
+    asyncio.create_task(
+        run_agent_job(
+            job_id, _job_repo, request.kind, request.query, request.tickers
+        )
+    )
+    return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
+
+
+# ---------------------------------------------------------------------------
+# ジョブ（汎用バックグラウンド実行基盤 / 状態取得）
 # ---------------------------------------------------------------------------
 
 
