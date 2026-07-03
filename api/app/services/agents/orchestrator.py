@@ -14,14 +14,16 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
 from app.services.agents import company, general
-from app.services.agents.runtime import classify_intent, extract_tickers
+from app.services.agents.resolver import resolve_tickers
+from app.services.agents.runtime import classify_intent_llm
 from app.services.agents.state import AgentState, new_state
 
 
-async def _classify(state: AgentState) -> dict[str, Any]:
-    """意図と対象銘柄を判定する。"""
-    tickers = state["tickers"] or extract_tickers(state["query"])
-    return {"tickers": tickers, "intent": classify_intent(state["query"], tickers)}
+async def _classify(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
+    """意図と対象銘柄を判定する（銘柄解決 → LLM 意図判定）。"""
+    tickers = state["tickers"] or resolve_tickers(state["query"])
+    intent = await classify_intent_llm(state["query"], tickers, config)
+    return {"tickers": tickers, "intent": intent}
 
 
 def _route(state: AgentState) -> str:

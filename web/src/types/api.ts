@@ -73,7 +73,7 @@ export interface ConversationMessage {
 export interface SendMessageResponse {
   conversation: Conversation
   user_message: ConversationMessage
-  assistant_message: ConversationMessage
+  job_id: string
 }
 
 // ───────────────────────────────────────────────

@@ -3,14 +3,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Coroutine
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Response
 
 from app.services.agents.runner import run_agent_job
 from app.services.chat.repository import ChatRepository
-from app.services.chat.service import send_message
+from app.services.chat.service import accept_message, run_chat_agent_job
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_refresh_job
 from app.services.screener.repository import ScreenerRepository
@@ -38,6 +39,17 @@ _job_repo = JobRepository(settings.db_path)
 _screener_repo = ScreenerRepository(settings.db_path)
 _screener = ScreenerService(_screener_repo)
 _chat_repo = ChatRepository(settings.db_path)
+
+# イベントループはタスクへ弱参照しか持たないため、参照を保持しないと
+# 実行中のバックグラウンドタスクが GC で消え得る（Python 公式ドキュメントの注意）。
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+def _spawn(coro: Coroutine[Any, Any, None]) -> None:
+    """バックグラウンドタスクを起動し、完了まで参照を保持する。"""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 @asynccontextmanager
@@ -128,7 +140,7 @@ async def screener_refresh() -> CreateJobResponse:
     """
     job_id = str(uuid.uuid4())
     await _job_repo.create(job_id, "screener_refresh")
-    asyncio.create_task(run_refresh_job(job_id, _job_repo, _screener))
+    _spawn(run_refresh_job(job_id, _job_repo, _screener))
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
 
 
@@ -177,17 +189,26 @@ async def list_messages(conversation_id: str) -> list[Message]:
 @app.post(
     "/api/v1/chat/conversations/{conversation_id}/messages",
     response_model=SendMessageResponse,
+    status_code=202,
 )
 async def post_message(
     conversation_id: str, request: SendMessageRequest
 ) -> SendMessageResponse:
-    """ユーザー発言を保存し、AI 応答（現状モック）を生成・保存して返す。
+    """ユーザー発言を保存し、AI 応答をエージェントジョブとして実行する。
 
-    TODO(Phase 4/5): 応答生成を親エージェント（Job 実行）に差し替える。
+    進捗は GET /api/v1/jobs/{job_id} でポーリングする。完了時の回答は
+    Job.result に加えて会話（assistant メッセージ）にも保存される。
     """
-    result = await send_message(_chat_repo, conversation_id, request.content)
+    result = await accept_message(
+        _chat_repo, _job_repo, conversation_id, request.content
+    )
     if result is None:
         raise HTTPException(status_code=404, detail="conversation not found")
+    _spawn(
+        run_chat_agent_job(
+            result.job_id, _job_repo, _chat_repo, conversation_id, request.content
+        )
+    )
     return result
 
 
@@ -205,7 +226,7 @@ async def create_agent_job(request: AgentJobRequest) -> CreateJobResponse:
     """
     job_id = str(uuid.uuid4())
     await _job_repo.create(job_id, request.query)
-    asyncio.create_task(
+    _spawn(
         run_agent_job(
             job_id, _job_repo, request.kind, request.query, request.tickers
         )

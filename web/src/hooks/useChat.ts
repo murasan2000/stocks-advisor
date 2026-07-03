@@ -3,10 +3,11 @@ import {
   createConversation,
   deleteConversation,
   getConversations,
+  getJob,
   getMessages,
   postMessage,
 } from '../api/client'
-import type { Conversation } from '../types/api'
+import { type Conversation, PHASE_LABELS } from '../types/api'
 
 /** モーダルの矩形。x/y は画面右下からのオフセット（右下アンカー）。 */
 export interface ChatRect {
@@ -24,7 +25,13 @@ export interface ChatMessage {
   content: string
   pending?: boolean
   isError?: boolean
+  phaseText?: string // 生成中の進捗表示（例: 「意図判定: 完了」）
 }
+
+const POLL_MS = 1200
+const POLL_TIMEOUT_MS = 330_000 // バックエンドのエージェントタイムアウトより長め
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export type ChatView = 'chat' | 'history'
 
@@ -53,6 +60,10 @@ export function useChat() {
   const open = useCallback(() => setIsOpen(true), [])
   const close = useCallback(() => setIsOpen(false), [])
 
+  const patchMessage = useCallback((id: string, patch: Partial<ChatMessage>) => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)))
+  }, [])
+
   const send = useCallback(async () => {
     const text = input.trim()
     if (!text || busy) return
@@ -71,31 +82,55 @@ export function useChat() {
         convId = (await createConversation()).conversation_id
         setConversationId(convId)
       }
-      const res = await postMessage(convId, text)
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === pendingId
-            ? { ...m, pending: false, content: res.assistant_message.content }
-            : m,
-        ),
-      )
+      // 送信するとエージェントジョブが作られる。完了までポーリングし、
+      // 進捗フェーズ（意図判定/委任/レポート生成…）を生成中バブルに表示する。
+      const { job_id } = await postMessage(convId, text)
+      const startedAt = Date.now()
+      for (;;) {
+        await sleep(POLL_MS)
+        const job = await getJob(job_id)
+        if (job.status === 'done') {
+          patchMessage(pendingId, {
+            pending: false,
+            phaseText: undefined,
+            content: job.result ?? '(回答が空でした)',
+          })
+          break
+        }
+        if (job.status === 'error') {
+          patchMessage(pendingId, {
+            pending: false,
+            phaseText: undefined,
+            isError: true,
+            content: `回答の生成に失敗しました: ${job.error ?? '不明なエラー'}`,
+          })
+          break
+        }
+        const current = job.progress?.at(-1)
+        if (current) {
+          patchMessage(pendingId, {
+            phaseText: `${current.label}: ${PHASE_LABELS[current.status]}`,
+          })
+        }
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+          patchMessage(pendingId, {
+            pending: false,
+            isError: true,
+            content: 'タイムアウトしました。もう一度お試しください。',
+          })
+          break
+        }
+      }
     } catch (e) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === pendingId
-            ? {
-                ...m,
-                pending: false,
-                isError: true,
-                content: `送信に失敗しました: ${e instanceof Error ? e.message : e}`,
-              }
-            : m,
-        ),
-      )
+      patchMessage(pendingId, {
+        pending: false,
+        isError: true,
+        content: `送信に失敗しました: ${e instanceof Error ? e.message : e}`,
+      })
     } finally {
       setBusy(false)
     }
-  }, [input, busy, conversationId])
+  }, [input, busy, conversationId, patchMessage])
 
   /** 新しい会話を開始する（現在の表示をクリア。次回送信時に会話を作成）。 */
   const newConversation = useCallback(() => {
