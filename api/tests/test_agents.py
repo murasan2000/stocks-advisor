@@ -36,12 +36,13 @@ async def _fake_intent_llm(
 
 @pytest.fixture
 def fast_intent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """意図判定の LLM 呼び出しを即時フォールバックに差し替える（テスト高速化）。
+    """意図判定 LLM を即時フォールバックにし、Web検索を無効化する（テスト高速化）。
 
     オフラインでは実接続リトライ（数秒）を待ってしまうため、オフライン経路
     そのものを検証するテスト以外はこのフィクスチャを使う。
     """
     monkeypatch.setattr(runtime, "invoke_llm", _fake_intent_llm)
+    monkeypatch.setattr(general, "search_web", _no_search)
 
 
 # ---------------------------------------------------------------------------
@@ -88,14 +89,45 @@ def test_resolve_tickers_by_code_and_name() -> None:
 # ---------------------------------------------------------------------------
 
 
+async def _no_search(query: str, **kwargs: Any) -> list[Any]:
+    return []
+
+
 async def test_general_agent_uses_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(general, "invoke_llm", _fake_llm)
+    monkeypatch.setattr(general, "search_web", _no_search)
     answer = await general.run("PERとは？")
+    # 検索結果なし → プロンプトは質問のみ・出典セクションなし
     assert answer == "[LLM] PERとは？"
 
 
-async def test_general_agent_falls_back_offline() -> None:
+async def test_general_agent_appends_citations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_search(query: str, **kwargs: Any) -> list[dict[str, str]]:
+        return [
+            {"title": "PER入門", "url": "https://e.com/1", "snippet": "解説"},
+            {"title": "指標の見方", "url": "https://e.com/2", "snippet": ""},
+        ]
+
+    monkeypatch.setattr(general, "search_web", _fake_search)
+    monkeypatch.setattr(general, "invoke_llm", _fake_llm)
+
+    answer = await general.run("PERとは？")
+    # LLM 入力に参考情報が含まれ（_fake_llm はユーザープロンプトを反射）、
+    # 回答末尾に出典（Markdownリンク）が付く
+    assert "参考情報（Web検索結果）" in answer
+    assert "#### 出典" in answer
+    assert "[PER入門](https://e.com/1)" in answer
+    assert "[指標の見方](https://e.com/2)" in answer
+
+
+async def test_general_agent_falls_back_offline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # LLM 未接続でも例外を投げず、フォールバック文言を返す
+    # （検索は無効化: .env にキーがあっても実ネットワークへ出ないように）
+    monkeypatch.setattr(general, "search_web", _no_search)
     answer = await general.run("PERとは？")
     assert "PERとは？" in answer
     assert answer  # 空でない

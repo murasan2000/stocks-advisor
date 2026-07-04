@@ -34,7 +34,7 @@ _GRAPHS: dict[str, Any] = {
 # kind -> 事前登録する実行プラン（ノードkey列）。auto は classify 後に動的追加。
 _PLANS: dict[str, list[str]] = {
     "auto": ["classify"],
-    "general": ["answer"],
+    "general": ["search", "answer"],
     "company": ["resolve", "report"],
 }
 
@@ -45,6 +45,7 @@ _NODE_META: dict[str, tuple[str, AgentPhase]] = {
     "company": ("企業分析エージェント", AgentPhase.SEARCHING),
     "resolve": ("対象銘柄の特定", AgentPhase.SEARCHING),
     "report": ("レポート生成", AgentPhase.GENERATING_REPORT),
+    "search": ("Web検索", AgentPhase.SEARCHING),
     "answer": ("回答生成", AgentPhase.GENERATING_REPORT),
 }
 
@@ -66,6 +67,9 @@ def _summarize(node: str, update: dict[str, Any]) -> str | None:
     if node == "resolve":
         tickers = update.get("tickers") or []
         return f"対象: {', '.join(tickers)}" if tickers else "対象銘柄なし"
+    if node == "search":
+        results = update.get("search_results") or []
+        return f"参考情報 {len(results)} 件を取得"
     answer = update.get("answer")
     return _truncate(str(answer)) if answer else None
 
