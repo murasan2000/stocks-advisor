@@ -14,7 +14,7 @@ from typing import Any
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
-from app.services.agents.runtime import extract_tickers
+from app.services.agents.resolver import resolve_tickers
 from app.services.agents.state import AgentState, new_state
 
 # レポートの節構成（Phase 7 で各節を実データ＋AI分析で埋める）。
@@ -39,8 +39,8 @@ def _skeleton_report(ticker: str) -> str:
 
 
 async def _resolve(state: AgentState) -> dict[str, Any]:
-    """分析対象の銘柄を確定する（未指定なら query から抽出）。"""
-    tickers = state["tickers"] or extract_tickers(state["query"])
+    """分析対象の銘柄を確定する（未指定なら query のコード・企業名から解決）。"""
+    tickers = state["tickers"] or resolve_tickers(state["query"])
     return {"tickers": tickers}
 
 

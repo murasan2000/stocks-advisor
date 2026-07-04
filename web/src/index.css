@@ -1019,6 +1019,17 @@ input {
   color: var(--text-muted);
 }
 
+.chat-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-phase {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
 .chat-typing {
   display: inline-flex;
   gap: 4px;

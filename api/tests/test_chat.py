@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from app.services.agents import general, runtime
 from app.services.chat.repository import ChatRepository, make_title
-from app.services.chat.service import send_message
+from app.services.chat.service import accept_message, run_chat_agent_job
+from app.services.jobs.repository import JobRepository
+from app.types.jobs import JobStatus
 
 
 @pytest.fixture
 async def repo(tmp_path: Path) -> ChatRepository:
     r = ChatRepository(str(tmp_path / "chat.db"))
+    await r.initialize()
+    return r
+
+
+@pytest.fixture
+async def job_repo(tmp_path: Path) -> JobRepository:
+    r = JobRepository(str(tmp_path / "jobs.db"))
     await r.initialize()
     return r
 
@@ -74,16 +85,54 @@ async def test_delete_conversation_cascades(repo: ChatRepository) -> None:
     assert await repo.delete_conversation(conv.conversation_id) is False
 
 
-async def test_send_message_persists_pair(repo: ChatRepository) -> None:
+async def test_accept_message_persists_user_and_creates_job(
+    repo: ChatRepository, job_repo: JobRepository
+) -> None:
     conv = await repo.create_conversation()
-    result = await send_message(repo, conv.conversation_id, "こんにちは")
+    result = await accept_message(repo, job_repo, conv.conversation_id, "こんにちは")
     assert result is not None
     assert result.user_message.role == "user"
-    assert result.assistant_message.role == "assistant"
     assert result.conversation.title == "こんにちは"
 
-    messages = await repo.list_messages(conv.conversation_id)
-    assert len(messages) == 2
+    job = await job_repo.get(result.job_id)
+    assert job is not None and job.status == JobStatus.PENDING
 
     # 存在しない会話は None
-    assert await send_message(repo, "missing", "x") is None
+    assert await accept_message(repo, job_repo, "missing", "x") is None
+
+
+async def test_run_chat_agent_job_persists_assistant(
+    repo: ChatRepository,
+    job_repo: JobRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _fake_llm(
+        system: str, user: str, *, fallback: str, config: Any = None
+    ) -> str:
+        return f"[LLM] {user}"
+
+    async def _fake_intent(
+        system: str, user: str, *, fallback: str, config: Any = None
+    ) -> str:
+        return fallback
+
+    monkeypatch.setattr(general, "invoke_llm", _fake_llm)
+    # 意図判定のオフライン・リトライ実時間待ちを避ける
+    monkeypatch.setattr(runtime, "invoke_llm", _fake_intent)
+
+    conv = await repo.create_conversation()
+    accepted = await accept_message(
+        repo, job_repo, conv.conversation_id, "PERとは何ですか"
+    )
+    assert accepted is not None
+
+    await run_chat_agent_job(
+        accepted.job_id, job_repo, repo, conv.conversation_id, "PERとは何ですか"
+    )
+
+    # ジョブ完了 + assistant メッセージが会話へ永続化される
+    job = await job_repo.get(accepted.job_id)
+    assert job is not None and job.status == JobStatus.DONE
+    messages = await repo.list_messages(conv.conversation_id)
+    assert [m.role for m in messages] == ["user", "assistant"]
+    assert messages[-1].content == "[LLM] PERとは何ですか"

@@ -78,10 +78,33 @@ def extract_tickers(text: str) -> list[str]:
 
 
 def classify_intent(query: str, tickers: list[str]) -> str:
-    """意図を判定する（"general" | "company"）。
+    """ルールベースの意図判定（"general" | "company"）。LLM 失敗時のフォールバック。
 
-    雛形として、分析対象の銘柄コードが特定できた場合のみ company とみなす。
-    キーワードによる曖昧な推定は誤ルーティング（一般質問→company）を招くため
-    行わない。TODO(Phase 5): 企業名解決 + LLM ベースの意図判定に置き換える。
+    分析対象の銘柄が特定できた場合のみ company。キーワードによる曖昧な推定は
+    誤ルーティングを招くため行わない。
     """
     return "company" if tickers else "general"
+
+
+_INTENT_SYSTEM_PROMPT = (
+    "あなたは投資アシスタントのルーターです。ユーザーの質問を次の2種類に分類し、"
+    "分類名だけを小文字1単語で出力してください。\n"
+    "- company: 特定の企業・銘柄についての分析/評価/売買判断を求めている\n"
+    "- general: 投資の一般知識・用語・市場全般など、特定銘柄に依らない質問\n"
+    "出力は company または general のみ。説明は不要。"
+)
+
+
+async def classify_intent_llm(
+    query: str,
+    tickers: list[str],
+    config: RunnableConfig | None = None,
+) -> str:
+    """LLM による意図判定。銘柄が特定済みなら company 確定、LLM 失敗時はルールへ。"""
+    if tickers:
+        return "company"
+    fallback = classify_intent(query, tickers)
+    output = await invoke_llm(
+        _INTENT_SYSTEM_PROMPT, query, fallback=fallback, config=config
+    )
+    return "company" if "company" in output.lower() else "general"

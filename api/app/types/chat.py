@@ -29,8 +29,12 @@ class SendMessageRequest(BaseModel):
 
 
 class SendMessageResponse(BaseModel):
-    """送信結果。ユーザー発言と AI 応答（現状モック）を永続化して返す。"""
+    """送信受付結果（Job 非同期方式）。
+
+    ユーザー発言は即時永続化し、AI 応答はエージェントジョブとして実行される。
+    クライアントは job_id をポーリングし、完了時の回答は会話にも保存される。
+    """
 
     conversation: Conversation
     user_message: Message
-    assistant_message: Message
+    job_id: str
