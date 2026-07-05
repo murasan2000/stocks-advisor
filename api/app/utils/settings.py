@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     external_api_mode: str = "live"
     mock_data_dir: str = "../data/mock"
 
+    # Web 検索（エージェント共通ツール / Tavily）。未設定なら検索なしで動作。
+    tavily_api_key: str = ""
+
     # スクリーナーの live 取得チューニング（yfinance レートリミット対策）
     # 株価は一括DL、ファンダは低並列＋バックオフ再試行で全銘柄を取り切る。
     screener_history_batch: int = 40  # yf.download 1回あたりの銘柄数

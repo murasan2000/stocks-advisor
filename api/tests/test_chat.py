@@ -116,7 +116,11 @@ async def test_run_chat_agent_job_persists_assistant(
     ) -> str:
         return fallback
 
+    async def _no_search(query: str, **kwargs: Any) -> list[Any]:
+        return []
+
     monkeypatch.setattr(general, "invoke_llm", _fake_llm)
+    monkeypatch.setattr(general, "search_web", _no_search)
     # 意図判定のオフライン・リトライ実時間待ちを避ける
     monkeypatch.setattr(runtime, "invoke_llm", _fake_intent)
 

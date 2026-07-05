@@ -9,6 +9,8 @@ from __future__ import annotations
 import operator
 from typing import Annotated, TypedDict
 
+from app.services.search.web import SearchResult
+
 
 class AgentError(TypedDict):
     agent: str
@@ -21,6 +23,7 @@ class AgentState(TypedDict):
     query: str  # ユーザーの入力
     tickers: list[str]  # 企業分析の対象銘柄（指定 or query から抽出）
     intent: str  # "general" | "company"（親が判定）
+    search_results: list[SearchResult]  # Web検索の結果（引用に使う）
     answer: str  # 最終回答（Markdown）
     reports: dict[str, str]  # 企業分析: ticker -> レポート
     errors: Annotated[list[AgentError], operator.add]
@@ -32,6 +35,7 @@ def new_state(query: str, tickers: list[str] | None = None) -> AgentState:
         query=query,
         tickers=list(tickers or []),
         intent="",
+        search_results=[],
         answer="",
         reports={},
         errors=[],
