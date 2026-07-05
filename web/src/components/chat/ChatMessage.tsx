@@ -1,4 +1,5 @@
 import type { ChatMessage as Message } from '../../hooks/useChat'
+import { AgentProgress } from './AgentProgress'
 
 export function ChatMessage({ message }: { message: Message }) {
   const isUser = message.role === 'user'
@@ -8,18 +9,25 @@ export function ChatMessage({ message }: { message: Message }) {
         className={`chat-msg-bubble ${message.isError ? 'chat-msg-bubble--error' : ''}`}
       >
         {message.pending ? (
-          <span className="chat-pending">
-            <span className="chat-typing" aria-label="生成中">
-              <span />
-              <span />
-              <span />
+          message.progress?.length ? (
+            <AgentProgress steps={message.progress} />
+          ) : (
+            <span className="chat-pending">
+              <span className="chat-typing" aria-label="生成中">
+                <span />
+                <span />
+                <span />
+              </span>
             </span>
-            {message.phaseText ? (
-              <span className="chat-phase">{message.phaseText}</span>
-            ) : null}
-          </span>
+          )
         ) : (
-          message.content
+          <>
+            {message.content}
+            {/* エラー時はどのステップで失敗したかを残す */}
+            {message.isError && message.progress?.length ? (
+              <AgentProgress steps={message.progress} />
+            ) : null}
+          </>
         )}
       </div>
     </div>
