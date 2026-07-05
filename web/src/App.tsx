@@ -2,6 +2,7 @@ import { Sparkles, X } from 'lucide-react'
 import { useState } from 'react'
 import { AiButton } from './components/chat/AiButton'
 import { ChatModal } from './components/chat/ChatModal'
+import { ChatToast } from './components/chat/ChatToast'
 import { Sidebar } from './components/Sidebar'
 import { FilterPanel } from './components/screener/FilterPanel'
 import { ScreenerHeader } from './components/screener/ScreenerHeader'
@@ -135,6 +136,13 @@ export default function App() {
         </div>
       ) : null}
 
+      {chat.notice && !chat.isOpen ? (
+        <ChatToast
+          notice={chat.notice}
+          onOpen={chat.open}
+          onDismiss={chat.clearNotice}
+        />
+      ) : null}
       <AiButton onClick={chat.open} hidden={chat.isOpen} />
       <ChatModal chat={chat} />
     </div>

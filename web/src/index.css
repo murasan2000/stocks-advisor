@@ -1083,6 +1083,124 @@ input {
   gap: 10px;
 }
 
+/* 進捗ステップ（Phase 8: Job状態の可視化） */
+.agent-progress {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 230px;
+  margin: 2px 0;
+}
+
+.agent-step {
+  display: grid;
+  grid-template-columns: 18px auto 1fr;
+  column-gap: 8px;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+.agent-step-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+.agent-step--done .agent-step-icon {
+  background: rgba(34, 197, 94, 0.18);
+  color: var(--success);
+}
+.agent-step--running .agent-step-icon {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--accent-1);
+}
+.agent-step--waiting .agent-step-icon {
+  color: var(--text-muted);
+}
+.agent-step--error .agent-step-icon {
+  background: rgba(239, 68, 68, 0.18);
+  color: var(--error);
+}
+
+.agent-step-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.agent-step--waiting .agent-step-label {
+  color: var(--text-dim);
+}
+
+.agent-step-status {
+  justify-self: end;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.agent-step--running .agent-step-status {
+  color: var(--accent-3);
+}
+.agent-step--error .agent-step-status {
+  color: var(--error);
+}
+
+.agent-step-summary {
+  grid-column: 2 / 4;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+
+/* 完了/エラー通知トースト */
+.chat-toast {
+  position: fixed;
+  right: 22px;
+  bottom: 84px;
+  z-index: 55;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: toast-in 0.25s ease-out;
+}
+.chat-toast--done {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+.chat-toast--done svg {
+  color: var(--success);
+}
+.chat-toast--error {
+  border-color: rgba(239, 68, 68, 0.5);
+}
+.chat-toast--error svg {
+  color: var(--error);
+}
+.chat-toast-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .chat-phase {
   font-size: 11.5px;
   color: var(--text-dim);

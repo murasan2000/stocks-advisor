@@ -7,7 +7,7 @@ import {
   getMessages,
   postMessage,
 } from '../api/client'
-import { type Conversation, PHASE_LABELS } from '../types/api'
+import type { AgentStep, Conversation } from '../types/api'
 
 /** モーダルの矩形。x/y は画面右下からのオフセット（右下アンカー）。 */
 export interface ChatRect {
@@ -25,7 +25,13 @@ export interface ChatMessage {
   content: string
   pending?: boolean
   isError?: boolean
-  phaseText?: string // 生成中の進捗表示（例: 「意図判定: 完了」）
+  progress?: AgentStep[] // 生成中の進捗ステップ（Phase 8: 可視化）
+}
+
+/** モーダルを閉じている間にジョブが終わったときの通知（トースト表示用）。 */
+export interface ChatNotice {
+  type: 'done' | 'error'
+  text: string
 }
 
 const POLL_MS = 1200
@@ -54,12 +60,31 @@ export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false) // 外部トリガー（銘柄選択→分析）との二重送信防止
+  const [notice, setNotice] = useState<ChatNotice | null>(null)
+  const isOpenRef = useRef(false) // ポーリング完了時に「閉じたまま待ったか」を判定
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
-  const open = useCallback(() => setIsOpen(true), [])
-  const close = useCallback(() => setIsOpen(false), [])
+  const open = useCallback(() => {
+    setIsOpen(true)
+    isOpenRef.current = true
+    setNotice(null) // 開いたら通知は不要
+  }, [])
+  const close = useCallback(() => {
+    setIsOpen(false)
+    isOpenRef.current = false
+  }, [])
+
+  /** ジョブ完了/失敗時、モーダルが閉じていればトースト通知を出す。 */
+  const notifyIfClosed = useCallback((type: ChatNotice['type']) => {
+    if (isOpenRef.current) return
+    setNotice(
+      type === 'done'
+        ? { type, text: 'AIの回答が完了しました' }
+        : { type, text: 'AIの回答生成に失敗しました' },
+    )
+  }, [])
 
   const patchMessage = useCallback((id: string, patch: Partial<ChatMessage>) => {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)))
@@ -94,25 +119,24 @@ export function useChat() {
         if (job.status === 'done') {
           patchMessage(pendingId, {
             pending: false,
-            phaseText: undefined,
+            progress: undefined,
             content: job.result ?? '(回答が空でした)',
           })
+          notifyIfClosed('done')
           break
         }
         if (job.status === 'error') {
           patchMessage(pendingId, {
             pending: false,
-            phaseText: undefined,
+            progress: job.progress ?? undefined, // どのステップで失敗したかを残す
             isError: true,
             content: `回答の生成に失敗しました: ${job.error ?? '不明なエラー'}`,
           })
+          notifyIfClosed('error')
           break
         }
-        const current = job.progress?.at(-1)
-        if (current) {
-          patchMessage(pendingId, {
-            phaseText: `${current.label}: ${PHASE_LABELS[current.status]}`,
-          })
+        if (job.progress?.length) {
+          patchMessage(pendingId, { progress: job.progress })
         }
         if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
           patchMessage(pendingId, {
@@ -120,6 +144,7 @@ export function useChat() {
             isError: true,
             content: 'タイムアウトしました。もう一度お試しください。',
           })
+          notifyIfClosed('error')
           break
         }
       }
@@ -129,11 +154,12 @@ export function useChat() {
         isError: true,
         content: `送信に失敗しました: ${e instanceof Error ? e.message : e}`,
       })
+      notifyIfClosed('error') // 閉じて待っている場合も失敗に気付けるように
     } finally {
       setBusy(false)
       busyRef.current = false
     }
-  }, [conversationId, patchMessage])
+  }, [conversationId, patchMessage, notifyIfClosed])
 
   /** 入力欄の内容を送信する。 */
   const send = useCallback(async () => {
@@ -145,10 +171,10 @@ export function useChat() {
     async (codes: string[]) => {
       if (codes.length === 0) return
       setView('chat')
-      setIsOpen(true)
+      open()
       await sendText(`${codes.join(' ')} を分析してください`)
     },
-    [sendText],
+    [open, sendText],
   )
 
   /** 新しい会話を開始する（現在の表示をクリア。次回送信時に会話を作成）。 */
@@ -208,6 +234,8 @@ export function useChat() {
     [conversationId],
   )
 
+  const clearNotice = useCallback(() => setNotice(null), [])
+
   return {
     isOpen,
     rect,
@@ -218,6 +246,8 @@ export function useChat() {
     setInput,
     messages,
     busy,
+    notice,
+    clearNotice,
     conversationId,
     conversations,
     historyLoading,
