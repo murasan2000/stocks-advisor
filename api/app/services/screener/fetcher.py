@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import time
+from collections.abc import Callable
 from typing import Any
 
 from app.services.screener.metrics import (
@@ -22,6 +22,7 @@ from app.services.screener.metrics import (
 )
 from app.services.screener.universe import Ticker
 from app.types.api import StockRow
+from app.utils.retry import invoke_with_retry_sync
 from app.utils.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -49,23 +50,14 @@ def _is_rate_limited(exc: BaseException) -> bool:
     )
 
 
-def _with_retry(fn: Any, *, what: str) -> Any:
-    """レートリミット時に指数バックオフで再試行する（同期）。"""
-    delay = 2.0
-    last: BaseException | None = None
-    for attempt in range(settings.screener_max_retries):
-        try:
-            return fn()
-        except Exception as exc:  # noqa: BLE001 - 呼び出し側で扱う
-            last = exc
-            if not _is_rate_limited(exc):
-                raise
-            if attempt < settings.screener_max_retries - 1:
-                logger.info("rate limited on %s, retry in %.0fs", what, delay)
-                time.sleep(delay)
-                delay = min(delay * 2, 30.0)
-    assert last is not None
-    raise last
+def _with_retry[T](fn: Callable[[], T], *, what: str) -> T:
+    """レートリミット時のみ指数バックオフで再試行する（共通リトライを利用）。"""
+    return invoke_with_retry_sync(
+        fn,
+        should_retry=_is_rate_limited,
+        max_retries=settings.screener_max_retries,
+        what=what,
+    )
 
 
 def _finalize(

@@ -13,6 +13,7 @@ from app.services.external.edinet import (
 
 
 async def test_no_api_key_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    fetch_recent_filings.cache_clear()  # TTLキャッシュをテスト間で分離
     monkeypatch.setattr(edinet.settings, "edinet_api_key", "")
     assert is_edinet_available() is False
     assert await fetch_recent_filings("7203") == []
@@ -45,6 +46,7 @@ def test_match_filings_filters_by_code_and_doc_type() -> None:
 
 
 async def test_fetch_failure_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    fetch_recent_filings.cache_clear()
     monkeypatch.setattr(edinet.settings, "edinet_api_key", "dummy")
     monkeypatch.setattr(edinet, "_DOCUMENTS_URL", "http://127.0.0.1:1/unreachable")
     assert await fetch_recent_filings("7203", days=1) == []
