@@ -36,13 +36,15 @@ async def _fake_intent_llm(
 
 @pytest.fixture
 def fast_intent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """意図判定 LLM を即時フォールバックにし、Web検索を無効化する（テスト高速化）。
+    """LLM 呼び出しを即時フォールバックにし、Web検索を無効化する（テスト高速化）。
 
     オフラインでは実接続リトライ（数秒）を待ってしまうため、オフライン経路
     そのものを検証するテスト以外はこのフィクスチャを使う。
     """
     monkeypatch.setattr(runtime, "invoke_llm", _fake_intent_llm)
     monkeypatch.setattr(general, "search_web", _no_search)
+    monkeypatch.setattr(company, "search_web", _no_search)
+    monkeypatch.setattr(company, "invoke_llm", _fake_intent_llm)
 
 
 # ---------------------------------------------------------------------------
@@ -133,14 +135,17 @@ async def test_general_agent_falls_back_offline(
     assert answer  # 空でない
 
 
-async def test_company_agent_reports_per_ticker() -> None:
+async def test_company_agent_reports_per_ticker(fast_intent: None) -> None:
     answer = await company.run("分析して", tickers=["7203", "6758"])
-    assert "7203 企業分析レポート" in answer
-    assert "6758 企業分析レポート" in answer
-    assert "サマリー" in answer
+    # 銘柄名はユニバースから解決される
+    assert "トヨタ自動車（7203）企業分析レポート" in answer
+    assert "ソニーグループ（6758）企業分析レポート" in answer
+    for section in ("## サマリー", "## 財務分析", "## AI評価", "## 総評"):
+        assert section in answer
+    assert "投資判断はご自身の責任で" in answer  # 免責
 
 
-async def test_company_agent_requires_ticker() -> None:
+async def test_company_agent_requires_ticker(fast_intent: None) -> None:
     answer = await company.run("分析して", tickers=[])
     assert "銘柄コード" in answer
 
@@ -150,15 +155,15 @@ async def test_company_agent_requires_ticker() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_orchestrator_routes_to_company() -> None:
+async def test_orchestrator_routes_to_company(fast_intent: None) -> None:
     answer = await orchestrator.run("7203を分析して")
-    assert "7203 企業分析レポート" in answer
+    assert "（7203）企業分析レポート" in answer
 
 
-async def test_orchestrator_resolves_company_name() -> None:
+async def test_orchestrator_resolves_company_name(fast_intent: None) -> None:
     # 企業名からコードを解決して company にルーティングされる
     answer = await orchestrator.run("トヨタ自動車を分析して")
-    assert "7203 企業分析レポート" in answer
+    assert "（7203）企業分析レポート" in answer
 
 
 async def test_orchestrator_routes_to_general(
@@ -197,7 +202,9 @@ async def test_run_agent_job_completes(
     assert job.progress[0].started_at is not None
 
 
-async def test_run_agent_job_company_kind(tmp_path: Path) -> None:
+async def test_run_agent_job_company_kind(
+    tmp_path: Path, fast_intent: None
+) -> None:
     repo = JobRepository(str(tmp_path / "jobs.db"))
     await repo.initialize()
     await repo.create("j2", "企業分析")
@@ -207,4 +214,13 @@ async def test_run_agent_job_company_kind(tmp_path: Path) -> None:
     job = await repo.get("j2")
     assert job is not None
     assert job.status == JobStatus.DONE
-    assert "7203 企業分析レポート" in (job.result or "")
+    assert "（7203）企業分析レポート" in (job.result or "")
+    # 進捗: resolve → collect → analyze → report が完了状態で記録される
+    assert job.progress is not None
+    assert [s.key for s in job.progress] == [
+        "resolve",
+        "collect",
+        "analyze",
+        "report",
+    ]
+    assert all(s.status == AgentPhase.DONE for s in job.progress)

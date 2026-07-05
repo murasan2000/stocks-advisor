@@ -17,6 +17,22 @@ class AgentError(TypedDict):
     message: str
 
 
+class CompanyFacts(TypedDict):
+    """企業分析エージェントが収集する 1 銘柄分の事実情報。
+
+    metrics はスクリーナーのスナップショット（株価・PER・PBR・配当・ROE・RSI・
+    下落/反発率・スコア等）を辞書化したもの。
+    """
+
+    code: str
+    name: str
+    market: str
+    metrics: dict[str, float | int | str | None]
+    business_summary: str  # 企業概要（live の yfinance のみ。無ければ空）
+    news: list[SearchResult]  # 関連ニュース（Web検索 topic=news）
+    filings: list[str]  # 直近の開示（EDINET。例: "2026-06-25 有価証券報告書"）
+
+
 class AgentState(TypedDict):
     """親・子エージェントで共有する状態。"""
 
@@ -24,6 +40,8 @@ class AgentState(TypedDict):
     tickers: list[str]  # 企業分析の対象銘柄（指定 or query から抽出）
     intent: str  # "general" | "company"（親が判定）
     search_results: list[SearchResult]  # Web検索の結果（引用に使う）
+    company_facts: dict[str, CompanyFacts]  # 企業分析: code -> 収集済み事実
+    company_analyses: dict[str, str]  # 企業分析: code -> AI分析（Markdown断片）
     answer: str  # 最終回答（Markdown）
     reports: dict[str, str]  # 企業分析: ticker -> レポート
     errors: Annotated[list[AgentError], operator.add]
@@ -36,6 +54,8 @@ def new_state(query: str, tickers: list[str] | None = None) -> AgentState:
         tickers=list(tickers or []),
         intent="",
         search_results=[],
+        company_facts={},
+        company_analyses={},
         answer="",
         reports={},
         errors=[],

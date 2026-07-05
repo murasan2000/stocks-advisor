@@ -35,7 +35,7 @@ _GRAPHS: dict[str, Any] = {
 _PLANS: dict[str, list[str]] = {
     "auto": ["classify"],
     "general": ["search", "answer"],
-    "company": ["resolve", "report"],
+    "company": ["resolve", "collect", "analyze", "report"],
 }
 
 # ノードkey -> (表示ラベル, 実行中フェーズ)
@@ -44,6 +44,8 @@ _NODE_META: dict[str, tuple[str, AgentPhase]] = {
     "general": ("一般質問エージェント", AgentPhase.GENERATING_REPORT),
     "company": ("企業分析エージェント", AgentPhase.SEARCHING),
     "resolve": ("対象銘柄の特定", AgentPhase.SEARCHING),
+    "collect": ("情報収集", AgentPhase.SEARCHING),
+    "analyze": ("AI分析", AgentPhase.GENERATING_REPORT),
     "report": ("レポート生成", AgentPhase.GENERATING_REPORT),
     "search": ("Web検索", AgentPhase.SEARCHING),
     "answer": ("回答生成", AgentPhase.GENERATING_REPORT),
@@ -70,6 +72,12 @@ def _summarize(node: str, update: dict[str, Any]) -> str | None:
     if node == "search":
         results = update.get("search_results") or []
         return f"参考情報 {len(results)} 件を取得"
+    if node == "collect":
+        facts = update.get("company_facts") or {}
+        return f"{len(facts)} 銘柄の情報を収集"
+    if node == "analyze":
+        analyses = update.get("company_analyses") or {}
+        return f"{len(analyses)} 銘柄のAI分析が完了"
     answer = update.get("answer")
     return _truncate(str(answer)) if answer else None
 

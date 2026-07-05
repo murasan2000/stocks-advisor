@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
   createConversation,
   deleteConversation,
@@ -53,6 +53,7 @@ export function useChat() {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false) // 外部トリガー（銘柄選択→分析）との二重送信防止
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -64,9 +65,9 @@ export function useChat() {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)))
   }, [])
 
-  const send = useCallback(async () => {
-    const text = input.trim()
-    if (!text || busy) return
+  const sendText = useCallback(async (rawText: string) => {
+    const text = rawText.trim()
+    if (!text || busyRef.current) return
     const pendingId = uid()
     setMessages((prev) => [
       ...prev,
@@ -75,6 +76,7 @@ export function useChat() {
     ])
     setInput('')
     setBusy(true)
+    busyRef.current = true
     try {
       // 会話が無ければ作成してから送信（履歴として永続化される）
       let convId = conversationId
@@ -129,8 +131,25 @@ export function useChat() {
       })
     } finally {
       setBusy(false)
+      busyRef.current = false
     }
-  }, [input, busy, conversationId, patchMessage])
+  }, [conversationId, patchMessage])
+
+  /** 入力欄の内容を送信する。 */
+  const send = useCallback(async () => {
+    await sendText(input)
+  }, [input, sendText])
+
+  /** 選択銘柄の企業分析を依頼する（モーダルを開いて自動送信）。 */
+  const analyzeTickers = useCallback(
+    async (codes: string[]) => {
+      if (codes.length === 0) return
+      setView('chat')
+      setIsOpen(true)
+      await sendText(`${codes.join(' ')} を分析してください`)
+    },
+    [sendText],
+  )
 
   /** 新しい会話を開始する（現在の表示をクリア。次回送信時に会話を作成）。 */
   const newConversation = useCallback(() => {
@@ -205,6 +224,7 @@ export function useChat() {
     open,
     close,
     send,
+    analyzeTickers,
     newConversation,
     loadConversations,
     selectConversation,

@@ -1,3 +1,5 @@
+import { Sparkles, X } from 'lucide-react'
+import { useState } from 'react'
 import { AiButton } from './components/chat/AiButton'
 import { ChatModal } from './components/chat/ChatModal'
 import { Sidebar } from './components/Sidebar'
@@ -22,6 +24,8 @@ export default function App() {
     refreshing,
     refresh,
   } = useScreener()
+  // 企業分析の対象として選択中の銘柄コード
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const handleSort = (key: string) => {
     setFilters({
@@ -29,6 +33,26 @@ export default function App() {
       sortBy: key,
       sortDesc: filters.sortBy === key ? !filters.sortDesc : true,
     })
+  }
+
+  const toggleSelect = (code: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(code)) {
+        next.delete(code)
+      } else {
+        next.add(code)
+      }
+      return next
+    })
+  }
+
+  const handleAnalyze = () => {
+    // 送信中は受け付けない（選択を消したのに分析が走らない事故を防ぐ）
+    if (chat.busy) return
+    const codes = [...selected]
+    setSelected(new Set())
+    void chat.analyzeTickers(codes)
   }
 
   return (
@@ -74,6 +98,8 @@ export default function App() {
               sortDesc={filters.sortDesc}
               onSort={handleSort}
               loading={loading}
+              selected={selected}
+              onToggleSelect={toggleSelect}
             />
           </section>
         </div>
@@ -82,6 +108,32 @@ export default function App() {
           ※本情報は投資判断の参考であり、投資勧誘を目的としたものではありません。投資判断はご自身の責任で行ってください。
         </p>
       </main>
+
+      {selected.size > 0 ? (
+        <div className="select-action-bar">
+          <span className="select-action-count">
+            {selected.size} 銘柄を選択中（{[...selected].join(', ')}）
+          </span>
+          <button
+            type="button"
+            className="select-action-analyze"
+            onClick={handleAnalyze}
+            disabled={chat.busy}
+          >
+            <Sparkles size={15} />
+            AIで企業分析
+          </button>
+          <button
+            type="button"
+            className="chat-icon-btn"
+            onClick={() => setSelected(new Set())}
+            aria-label="選択を解除"
+            title="選択を解除"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      ) : null}
 
       <AiButton onClick={chat.open} hidden={chat.isOpen} />
       <ChatModal chat={chat} />

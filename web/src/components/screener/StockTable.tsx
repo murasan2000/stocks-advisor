@@ -36,6 +36,8 @@ interface Props {
   sortDesc: boolean
   onSort: (key: string) => void
   loading: boolean
+  selected: Set<string>
+  onToggleSelect: (code: string) => void
 }
 
 function scoreColor(score: number): string {
@@ -44,12 +46,23 @@ function scoreColor(score: number): string {
   return 'var(--text-dim)'
 }
 
-export function StockTable({ stocks, sortBy, sortDesc, onSort, loading }: Props) {
+export function StockTable({
+  stocks,
+  sortBy,
+  sortDesc,
+  onSort,
+  loading,
+  selected,
+  onToggleSelect,
+}: Props) {
   return (
     <div className="table-wrap">
       <table className="stock-table">
         <thead>
           <tr>
+            <th className="select-col" title="選択して企業分析に利用">
+              分析
+            </th>
             {COLUMNS.map((c) => (
               <th
                 key={c.key}
@@ -73,8 +86,17 @@ export function StockTable({ stocks, sortBy, sortDesc, onSort, loading }: Props)
         <tbody>
           {stocks.map((s) => {
             const up = (s.change_pct ?? 0) >= 0
+            const isSelected = selected.has(s.code)
             return (
-              <tr key={s.code}>
+              <tr key={s.code} className={isSelected ? 'row--selected' : ''}>
+                <td className="select-col">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => onToggleSelect(s.code)}
+                    aria-label={`${s.name} を分析対象に選択`}
+                  />
+                </td>
                 <td className="code">{s.code}</td>
                 <td>
                   <div className="name-cell">
