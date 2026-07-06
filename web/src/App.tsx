@@ -1,5 +1,5 @@
 import { Sparkles, X } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { AiButton } from './components/chat/AiButton'
 import { ChatModal } from './components/chat/ChatModal'
 import { ChatToast } from './components/chat/ChatToast'
@@ -27,6 +27,12 @@ export default function App() {
   } = useScreener()
   // 企業分析の対象として選択中の銘柄コード
   const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  // 検索語の反映。関数更新にして恒常的に同一 identity を保ち、
+  // ScreenerHeader 側のデバウンスが無関係な再描画でリセットされないようにする。
+  const handleSearch = useCallback((q: string) => {
+    setFilters((prev) => ({ ...prev, q }))
+  }, [setFilters])
 
   const handleSort = (key: string) => {
     setFilters({
@@ -65,7 +71,7 @@ export default function App() {
           meta={meta}
           total={total}
           q={filters.q}
-          onSearch={(q) => setFilters({ ...filters, q })}
+          onSearch={handleSearch}
           refreshing={refreshing}
           onRefresh={refresh}
         />
