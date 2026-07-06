@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from app.utils.cache import async_ttl_cache
 from app.utils.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -48,10 +49,12 @@ def _match_filings(data: Any, sec_code: str) -> list[str]:
     return filings
 
 
+@async_ttl_cache(ttl_seconds=1800)
 async def fetch_recent_filings(sec_code: str, days: int = 5) -> list[str]:
     """直近 days 日分の開示書類（有報・四半期/半期）を新しい順で返す。
 
     キー未設定・取得失敗時は空リスト（開示なしとして継続）。
+    同一銘柄への再問い合わせを抑えるため 30 分キャッシュする。
     """
     if not is_edinet_available():
         return []

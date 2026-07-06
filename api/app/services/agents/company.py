@@ -31,6 +31,7 @@ from app.services.screener.repository import ScreenerRepository
 from app.services.screener.universe import Ticker, load_universe
 from app.services.search.web import search_web
 from app.types.api import StockRow
+from app.utils.cache import async_ttl_cache
 from app.utils.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -240,8 +241,9 @@ async def _resolve(state: AgentState) -> dict[str, Any]:
     return {"tickers": tickers}
 
 
+@async_ttl_cache(ttl_seconds=3600)
 async def _fetch_business_summary(code: str) -> str:
-    """企業概要を取得する（live のみ。失敗時は空文字）。"""
+    """企業概要を取得する（live のみ。失敗時は空文字。1時間キャッシュ）。"""
     if settings.external_api_mode != "live":
         return ""
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -46,13 +47,26 @@ async def invoke_llm(
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
     ]
+    started = time.monotonic()
     try:
         response = await ainvoke_with_retry(
             lambda: asyncio.wait_for(llm.ainvoke(messages, config), _LLM_TIMEOUT)
         )
-        return str(response.content).strip() or fallback
+        text = str(response.content).strip()
+        # Prompt/応答の詳細トレースは Langfuse（callback）が正。ここは概況ログのみ。
+        logger.info(
+            "llm ok in %.1fs (prompt=%d chars, answer=%d chars)",
+            time.monotonic() - started,
+            len(system_prompt) + len(user_prompt),
+            len(text),
+        )
+        return text or fallback
     except Exception as exc:
-        logger.warning("LLM invocation failed, using fallback: %s", exc)
+        logger.warning(
+            "LLM invocation failed after %.1fs, using fallback: %s",
+            time.monotonic() - started,
+            exc,
+        )
         return fallback
 
 

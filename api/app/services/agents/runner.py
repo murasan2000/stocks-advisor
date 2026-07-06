@@ -179,6 +179,7 @@ async def run_agent_job(
     state = new_state(query, tickers)
     config = build_run_config(f"agent:{kind}")
     tracker = _ProgressTracker(job_id, repo, list(_PLANS.get(kind, [])))
+    started = time.monotonic()
     await repo.update_status(job_id, JobStatus.RUNNING)
     try:
         answer = await asyncio.wait_for(
@@ -187,7 +188,9 @@ async def run_agent_job(
         await repo.update_status(
             job_id, JobStatus.DONE, result=answer or "(回答が空でした)"
         )
-        log.info("agent job completed (kind=%s)", kind)
+        log.info(
+            "agent job completed (kind=%s, %.1fs)", kind, time.monotonic() - started
+        )
     except TimeoutError:
         log.error("agent job timed out (kind=%s)", kind)
         await tracker.fail_running()

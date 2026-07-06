@@ -66,6 +66,18 @@ npm run dev     # 開発サーバ（:5173、/api を :8000 にプロキシ）
 8. **応答は Job 非同期 + ポーリング**。長時間処理は `services/jobs` のジョブとして実行し、
    進捗は `AgentStep`（phase）で表現する。
 
+## エラーハンドリング / キャッシュ / ログの方針
+
+- **リトライは `utils/retry.py` に集約**。LLM・重要 I/O は指数バックオフ
+  （`ainvoke_with_retry`）、同期処理のレートリミットは判定付き
+  （`invoke_with_retry_sync(should_retry=...)`）。
+- **「失敗＝機能縮退」の外部呼び出し（Web検索・EDINET 等）はリトライしない**。
+  空結果を返して呼び出し側が続行する（過剰リトライで応答を遅くしない）。
+- **短期キャッシュは `utils/cache.py` の `async_ttl_cache`**（企業概要 1h、
+  EDINET 30min 等）。株価・指標はスクリーナーのスナップショットが正。
+- **Prompt/応答の詳細トレースは Langfuse が正**（callback を親→子へ伝播）。
+  アプリログは概況（所要時間・文字数・job_id）に留める。
+
 ## Git / PR ワークフロー
 
 - 作業ブランチ: `claude/market-agent-mvp-s9yhk6`（マージ済みなら `main` から作り直す）。
