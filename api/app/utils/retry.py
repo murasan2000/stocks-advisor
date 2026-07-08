@@ -17,6 +17,17 @@ from collections.abc import Awaitable, Callable
 logger = logging.getLogger(__name__)
 
 
+def is_rate_limit_error(exc: BaseException) -> bool:
+    """レートリミット（429等）を示す例外か判定する（yfinance 等の should_retry 用）。"""
+    msg = str(exc).lower()
+    return (
+        "too many requests" in msg
+        or "rate limit" in msg
+        or "rate-limit" in msg
+        or "429" in msg
+    )
+
+
 async def ainvoke_with_retry[T](
     fn: Callable[[], Awaitable[T]],
     max_retries: int = 3,

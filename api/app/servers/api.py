@@ -14,13 +14,19 @@ from app.services.chat.repository import ChatRepository
 from app.services.chat.service import accept_message, run_chat_agent_job
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_refresh_job
+from app.services.screener.history import fetch_candles_live, synth_candles
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
+from app.services.watchlist.repository import WatchlistRepository
+from app.services.watchlist.service import WatchlistService
 from app.types.api import (
     AgentJobRequest,
     CreateJobResponse,
     HealthResponse,
+    HistoryPeriod,
     ScreenerMeta,
+    StockHistory,
+    StockRow,
     StocksResponse,
 )
 from app.types.chat import (
@@ -39,6 +45,8 @@ _job_repo = JobRepository(settings.db_path)
 _screener_repo = ScreenerRepository(settings.db_path)
 _screener = ScreenerService(_screener_repo)
 _chat_repo = ChatRepository(settings.db_path)
+_watchlist_repo = WatchlistRepository(settings.db_path)
+_watchlist = WatchlistService(_watchlist_repo, _screener_repo)
 
 # イベントループはタスクへ弱参照しか持たないため、参照を保持しないと
 # 実行中のバックグラウンドタスクが GC で消え得る（Python 公式ドキュメントの注意）。
@@ -58,6 +66,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     await _job_repo.initialize()
     await _screener_repo.initialize()
     await _chat_repo.initialize()
+    await _watchlist_repo.initialize()
     # mock モードかつキャッシュが空なら、合成データで即時シードする（開発用）。
     if settings.external_api_mode != "live" and await _screener_repo.count() == 0:
         logger.info("seeding screener snapshot with mock data")
@@ -142,6 +151,59 @@ async def screener_refresh() -> CreateJobResponse:
     await _job_repo.create(job_id, "screener_refresh")
     _spawn(run_refresh_job(job_id, _job_repo, _screener))
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
+
+
+# ---------------------------------------------------------------------------
+# ウォッチリスト
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/watchlist", response_model=list[StockRow])
+async def watchlist_list() -> list[StockRow]:
+    """登録銘柄を追加日時の新しい順で返す（スナップショット結合済み）。"""
+    return await _watchlist.list_rows()
+
+
+@app.get("/api/v1/watchlist/codes", response_model=list[str])
+async def watchlist_codes() -> list[str]:
+    """登録済みコードのみを返す（スクリーナー画面の★状態判定用の軽量取得）。"""
+    return await _watchlist.list_codes()
+
+
+@app.post("/api/v1/watchlist/{code}", status_code=200)
+async def watchlist_add(code: str) -> Response:
+    """登録する（冪等）。"""
+    await _watchlist.add(code)
+    return Response(status_code=200)
+
+
+@app.delete("/api/v1/watchlist/{code}", status_code=204)
+async def watchlist_remove(code: str) -> Response:
+    """解除する（未登録でもエラーにしない）。"""
+    await _watchlist.remove(code)
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# 銘柄詳細チャート
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/stocks/{code}/history", response_model=StockHistory)
+async def stock_history(
+    code: str,
+    period: HistoryPeriod = Query(default="1y"),  # noqa: B008  (FastAPI 既定値の慣用)
+) -> StockHistory:
+    """1銘柄分の日足 OHLCV を返す（都度オンデマンド取得、全銘柄一括とは別経路）。"""
+    if settings.external_api_mode == "live":
+        from app.services.external.symbols import to_yahoo_symbol
+
+        candles = await asyncio.to_thread(
+            fetch_candles_live, to_yahoo_symbol(code), period
+        )
+    else:
+        candles = synth_candles(code, period)
+    return StockHistory(code=code, period=period, candles=candles)
 
 
 # ---------------------------------------------------------------------------
