@@ -1,40 +1,106 @@
-import { RotateCcw } from 'lucide-react'
+import { Check, RotateCcw } from 'lucide-react'
+import { useState } from 'react'
 import {
   EMPTY_FILTERS,
   type Filters,
   MARKET_OPTIONS,
+  type Preset,
   PRESETS,
 } from '../../types/api'
 
+/** フィルターパネルが扱う項目（検索テキスト・ソートは対象外）。 */
+export type PanelFilters = Omit<Filters, 'q' | 'sortBy' | 'sortDesc'>
+
 interface Props {
   filters: Filters
-  onChange: (f: Filters) => void
+  /** 「適用」押下時にパネル項目のみ反映する（q・ソートは変更しない）。 */
+  onApply: (panel: PanelFilters) => void
 }
 
 const OKU = 100_000_000 // 1億
 
-export function FilterPanel({ filters, onChange }: Props) {
-  const patch = (p: Partial<Filters>) => onChange({ ...filters, ...p })
+const toPanel = (f: Filters): PanelFilters => ({
+  markets: f.markets,
+  perMin: f.perMin,
+  perMax: f.perMax,
+  pbrMax: f.pbrMax,
+  dividendYieldMin: f.dividendYieldMin,
+  roeMin: f.roeMin,
+  marketCapMin: f.marketCapMin,
+  oversold: f.oversold,
+  dropFromHighPct: f.dropFromHighPct,
+  reboundFromLowPct: f.reboundFromLowPct,
+})
+
+// markets は選択順に依存させない（並びが違うだけで「未適用」扱いにしない）
+const normalize = (p: PanelFilters): PanelFilters => ({
+  ...toPanel({ ...EMPTY_FILTERS, ...p }),
+  markets: [...p.markets].sort(),
+})
+
+const samePanel = (a: PanelFilters, b: PanelFilters): boolean =>
+  JSON.stringify(normalize(a)) === JSON.stringify(normalize(b))
+
+/** プリセットを draft に適用した結果（パネル項目のみ）。 */
+const applyPreset = (p: Preset, draft: PanelFilters): PanelFilters =>
+  toPanel(p.apply({ ...EMPTY_FILTERS, ...draft }))
+
+/** プリセットが設定する項目（EMPTY との差分キー）。トグル解除に使う。 */
+const presetKeys = (p: Preset): (keyof PanelFilters)[] => {
+  const base = toPanel(EMPTY_FILTERS)
+  const applied = toPanel(p.apply({ ...EMPTY_FILTERS }))
+  return (Object.keys(applied) as (keyof PanelFilters)[]).filter(
+    (k) => JSON.stringify(applied[k]) !== JSON.stringify(base[k]),
+  )
+}
+
+export function FilterPanel({ filters, onApply }: Props) {
+  // 変更は draft に保持し、「適用」押下で初めて検索を実行する（#27）
+  const [draft, setDraft] = useState<PanelFilters>(() => toPanel(filters))
+  const dirty = !samePanel(draft, toPanel(filters))
+
+  const patch = (p: Partial<PanelFilters>) => setDraft({ ...draft, ...p })
 
   const num = (v: string): number | undefined =>
     v.trim() === '' ? undefined : Number(v)
 
   const toggleMarket = (m: string) =>
     patch({
-      markets: filters.markets.includes(m)
-        ? filters.markets.filter((x) => x !== m)
-        : [...filters.markets, m],
+      markets: draft.markets.includes(m)
+        ? draft.markets.filter((x) => x !== m)
+        : [...draft.markets, m],
     })
+
+  // プリセットの条件がすべて draft に反映済みならアクティブ表示（#26）
+  const isPresetActive = (p: Preset) => samePanel(applyPreset(p, draft), draft)
+
+  const togglePreset = (p: Preset) => {
+    if (isPresetActive(p)) {
+      // 解除: プリセットが設定する項目を初期値に戻す
+      const cleared = { ...draft }
+      const empty = toPanel(EMPTY_FILTERS)
+      for (const k of presetKeys(p)) {
+        // キーごとの代入は TS がユニオン型を絞り込めないため Record 経由で戻す
+        ;(cleared as Record<string, unknown>)[k] = empty[k]
+      }
+      setDraft(cleared)
+    } else {
+      setDraft(applyPreset(p, draft))
+    }
+  }
+
+  const reset = () => {
+    // リセットは従来どおり即時反映（draft も初期化）
+    const empty = toPanel(EMPTY_FILTERS)
+    setDraft(empty)
+    onApply(empty)
+  }
 
   return (
     <aside className="filter-panel">
       <div className="filter-head">
         <span className="filter-title">フィルター</span>
-        <button
-          type="button"
-          className="filter-reset"
-          onClick={() => onChange({ ...EMPTY_FILTERS })}
-        >
+        <button type="button" className="filter-reset" onClick={reset}>
           <RotateCcw size={13} /> リセット
         </button>
       </div>
@@ -46,9 +112,9 @@ export function FilterPanel({ filters, onChange }: Props) {
             <button
               key={p.key}
               type="button"
-              className="preset-chip"
+              className={`preset-chip ${isPresetActive(p) ? 'preset-chip--active' : ''}`}
               title={p.description}
-              onClick={() => onChange(p.apply(filters))}
+              onClick={() => togglePreset(p)}
             >
               {p.label}
             </button>
@@ -63,7 +129,7 @@ export function FilterPanel({ filters, onChange }: Props) {
             <label key={m} className="check">
               <input
                 type="checkbox"
-                checked={filters.markets.includes(m)}
+                checked={draft.markets.includes(m)}
                 onChange={() => toggleMarket(m)}
               />
               <span>{m}</span>
@@ -80,14 +146,14 @@ export function FilterPanel({ filters, onChange }: Props) {
             <input
               type="number"
               placeholder="下限"
-              value={filters.perMin ?? ''}
+              value={draft.perMin ?? ''}
               onChange={(e) => patch({ perMin: num(e.target.value) })}
             />
             <span>〜</span>
             <input
               type="number"
               placeholder="上限"
-              value={filters.perMax ?? ''}
+              value={draft.perMax ?? ''}
               onChange={(e) => patch({ perMax: num(e.target.value) })}
             />
           </div>
@@ -97,7 +163,7 @@ export function FilterPanel({ filters, onChange }: Props) {
           <input
             type="number"
             placeholder="例: 1.5"
-            value={filters.pbrMax ?? ''}
+            value={draft.pbrMax ?? ''}
             onChange={(e) => patch({ pbrMax: num(e.target.value) })}
           />
         </div>
@@ -106,7 +172,7 @@ export function FilterPanel({ filters, onChange }: Props) {
           <input
             type="number"
             placeholder="例: 3"
-            value={filters.dividendYieldMin ?? ''}
+            value={draft.dividendYieldMin ?? ''}
             onChange={(e) => patch({ dividendYieldMin: num(e.target.value) })}
           />
         </div>
@@ -115,7 +181,7 @@ export function FilterPanel({ filters, onChange }: Props) {
           <input
             type="number"
             placeholder="例: 10"
-            value={filters.roeMin ?? ''}
+            value={draft.roeMin ?? ''}
             onChange={(e) => patch({ roeMin: num(e.target.value) })}
           />
         </div>
@@ -124,7 +190,7 @@ export function FilterPanel({ filters, onChange }: Props) {
           <input
             type="number"
             placeholder="例: 1000"
-            value={filters.marketCapMin ? filters.marketCapMin / OKU : ''}
+            value={draft.marketCapMin ? draft.marketCapMin / OKU : ''}
             onChange={(e) => {
               const v = num(e.target.value)
               patch({ marketCapMin: v === undefined ? undefined : v * OKU })
@@ -138,7 +204,7 @@ export function FilterPanel({ filters, onChange }: Props) {
         <label className="check check--toggle">
           <input
             type="checkbox"
-            checked={filters.oversold}
+            checked={draft.oversold}
             onChange={(e) => patch({ oversold: e.target.checked })}
           />
           <span>有効にする</span>
@@ -150,8 +216,8 @@ export function FilterPanel({ filters, onChange }: Props) {
           <label>5年高値からの下落(%)</label>
           <input
             type="number"
-            disabled={!filters.oversold}
-            value={filters.dropFromHighPct}
+            disabled={!draft.oversold}
+            value={draft.dropFromHighPct}
             onChange={(e) => patch({ dropFromHighPct: Number(e.target.value) || 0 })}
           />
         </div>
@@ -159,14 +225,24 @@ export function FilterPanel({ filters, onChange }: Props) {
           <label>1年安値からの反発(%)</label>
           <input
             type="number"
-            disabled={!filters.oversold}
-            value={filters.reboundFromLowPct}
+            disabled={!draft.oversold}
+            value={draft.reboundFromLowPct}
             onChange={(e) =>
               patch({ reboundFromLowPct: Number(e.target.value) || 0 })
             }
           />
         </div>
       </div>
+
+      <button
+        type="button"
+        className={`filter-apply ${dirty ? 'filter-apply--dirty' : ''}`}
+        onClick={() => onApply(draft)}
+        disabled={!dirty}
+      >
+        <Check size={15} />
+        {dirty ? 'フィルターを適用' : '適用済み'}
+      </button>
     </aside>
   )
 }

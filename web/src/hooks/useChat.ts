@@ -90,21 +90,30 @@ export function useChat() {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)))
   }, [])
 
-  const sendText = useCallback(async (rawText: string) => {
+  const sendText = useCallback(async (
+    rawText: string,
+    opts?: { newConversation?: boolean },
+  ) => {
     const text = rawText.trim()
     if (!text || busyRef.current) return
     const pendingId = uid()
-    setMessages((prev) => [
-      ...prev,
+    const newMessages: ChatMessage[] = [
       { id: uid(), role: 'user', content: text },
       { id: pendingId, role: 'assistant', content: '', pending: true },
-    ])
+    ]
+    if (opts?.newConversation) {
+      // 新規チャットルームとして開始（表示中の会話を引き継がない）
+      setConversationId(null)
+      setMessages(newMessages)
+    } else {
+      setMessages((prev) => [...prev, ...newMessages])
+    }
     setInput('')
     setBusy(true)
     busyRef.current = true
     try {
       // 会話が無ければ作成してから送信（履歴として永続化される）
-      let convId = conversationId
+      let convId = opts?.newConversation ? null : conversationId
       if (!convId) {
         convId = (await createConversation()).conversation_id
         setConversationId(convId)
@@ -166,13 +175,15 @@ export function useChat() {
     await sendText(input)
   }, [input, sendText])
 
-  /** 選択銘柄の企業分析を依頼する（モーダルを開いて自動送信）。 */
+  /** 選択銘柄の企業分析を依頼する（新規会話でモーダルを開いて自動送信）。 */
   const analyzeTickers = useCallback(
     async (codes: string[]) => {
       if (codes.length === 0) return
       setView('chat')
       open()
-      await sendText(`${codes.join(' ')} を分析してください`)
+      await sendText(`${codes.join(' ')} を分析してください`, {
+        newConversation: true,
+      })
     },
     [open, sendText],
   )

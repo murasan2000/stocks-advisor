@@ -1,10 +1,10 @@
 import { Sparkles, X } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { AiButton } from './components/chat/AiButton'
 import { ChatModal } from './components/chat/ChatModal'
 import { ChatToast } from './components/chat/ChatToast'
 import { Sidebar } from './components/Sidebar'
-import { FilterPanel } from './components/screener/FilterPanel'
+import { FilterPanel, type PanelFilters } from './components/screener/FilterPanel'
 import { ScreenerHeader } from './components/screener/ScreenerHeader'
 import { StatCards } from './components/screener/StatCards'
 import { StockTable } from './components/screener/StockTable'
@@ -27,6 +27,20 @@ export default function App() {
   } = useScreener()
   // 企業分析の対象として選択中の銘柄コード
   const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  // 検索語の反映。関数更新にして恒常的に同一 identity を保ち、
+  // ScreenerHeader 側のデバウンスが無関係な再描画でリセットされないようにする。
+  const handleSearch = useCallback((q: string) => {
+    setFilters((prev) => ({ ...prev, q }))
+  }, [setFilters])
+
+  // フィルターパネルの「適用」。パネル項目のみ反映し、検索語・ソートは維持する。
+  const handleApplyFilters = useCallback(
+    (panel: PanelFilters) => {
+      setFilters((prev) => ({ ...prev, ...panel }))
+    },
+    [setFilters],
+  )
 
   const handleSort = (key: string) => {
     setFilters({
@@ -65,7 +79,7 @@ export default function App() {
           meta={meta}
           total={total}
           q={filters.q}
-          onSearch={(q) => setFilters({ ...filters, q })}
+          onSearch={handleSearch}
           refreshing={refreshing}
           onRefresh={refresh}
         />
@@ -75,7 +89,7 @@ export default function App() {
         {error ? <div className="error-banner">{error}</div> : null}
 
         <div className="screener-body">
-          <FilterPanel filters={filters} onChange={setFilters} />
+          <FilterPanel filters={filters} onApply={handleApplyFilters} />
 
           <section className="results">
             <div className="results-meta">

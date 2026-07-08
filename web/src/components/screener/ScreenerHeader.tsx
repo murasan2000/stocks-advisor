@@ -1,6 +1,10 @@
 import { Activity, RefreshCw, Search } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import type { ScreenerMeta } from '../../types/api'
 import { fmtTimestamp } from '../../utils/format'
+
+// 検索テキストは入力の都度リクエストせず、この時間だけ待ってから反映する。
+const SEARCH_DEBOUNCE_MS = 600
 
 interface Props {
   meta: ScreenerMeta | null
@@ -20,6 +24,22 @@ export function ScreenerHeader({
   onRefresh,
 }: Props) {
   const isLive = meta?.source === 'live'
+  // 入力中はローカル state で即時表示し、一定時間後に onSearch へ反映する。
+  const [text, setText] = useState(q)
+  // 外部（クリアなど）から q が変わったらローカル入力にも同期する。
+  // 描画中に前回値と比較して合わせる（effect 内 setState を避ける公式パターン）。
+  const [prevQ, setPrevQ] = useState(q)
+  if (q !== prevQ) {
+    setPrevQ(q)
+    setText(q)
+  }
+
+  // 入力が落ち着いたら検索を実行（不要な連続リクエストを防ぐ）。
+  useEffect(() => {
+    if (text === q) return
+    const timer = setTimeout(() => onSearch(text), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [text, q, onSearch])
   return (
     <header className="screener-header">
       <div className="screener-header-title">
@@ -45,8 +65,8 @@ export function ScreenerHeader({
           <input
             type="text"
             placeholder="銘柄コード・名前で検索"
-            value={q}
-            onChange={(e) => onSearch(e.target.value)}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
           />
         </div>
         <button
