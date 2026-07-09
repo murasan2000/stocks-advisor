@@ -92,6 +92,21 @@ class ScreenerRepository:
                 rows = await cursor.fetchall()
         return [StockRow(**dict(row)) for row in rows]
 
+    async def get_by_codes(self, codes: list[str]) -> list[StockRow]:
+        """指定コードのスナップショット行を返す（見つからないコードは結果に含めない）。"""
+        if not codes:
+            return []
+        placeholders = ", ".join(["?"] * len(codes))
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                f"SELECT {_COLUMNS} FROM stocks_snapshot"
+                f" WHERE code IN ({placeholders})",
+                codes,
+            ) as cursor:
+                rows = await cursor.fetchall()
+        return [StockRow(**dict(row)) for row in rows]
+
     async def count(self) -> int:
         async with aiosqlite.connect(self._db_path) as db:
             async with db.execute("SELECT COUNT(*) FROM stocks_snapshot") as cursor:

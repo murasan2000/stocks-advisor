@@ -92,3 +92,29 @@ class StocksResponse(BaseModel):
     total: int  # フィルタ適用後の総件数
     summary: ScreenerSummary
     meta: ScreenerMeta
+
+
+# ---------------------------------------------------------------------------
+# ウォッチリスト / 銘柄詳細チャート
+# ---------------------------------------------------------------------------
+
+HistoryPeriod = Literal["3mo", "6mo", "1y", "2y", "5y", "10y"]
+
+
+class Candle(BaseModel):
+    """1日分の四本値・出来高。"""
+
+    date: str  # "YYYY-MM-DD"
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class StockHistory(BaseModel):
+    """GET /api/v1/stocks/{code}/history のレスポンス。"""
+
+    code: str
+    period: HistoryPeriod
+    candles: list[Candle]

@@ -22,7 +22,7 @@ from app.services.screener.metrics import (
 )
 from app.services.screener.universe import Ticker
 from app.types.api import StockRow
-from app.utils.retry import invoke_with_retry_sync
+from app.utils.retry import invoke_with_retry_sync, is_rate_limit_error
 from app.utils.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -40,21 +40,11 @@ def _seed(code: str) -> int:
     return int.from_bytes(hashlib.sha256(code.encode()).digest()[:4], "big")
 
 
-def _is_rate_limited(exc: BaseException) -> bool:
-    msg = str(exc).lower()
-    return (
-        "too many requests" in msg
-        or "rate limit" in msg
-        or "rate-limit" in msg
-        or "429" in msg
-    )
-
-
-def _with_retry[T](fn: Callable[[], T], *, what: str) -> T:
+def with_retry[T](fn: Callable[[], T], *, what: str) -> T:
     """レートリミット時のみ指数バックオフで再試行する（共通リトライを利用）。"""
     return invoke_with_retry_sync(
         fn,
-        should_retry=_is_rate_limited,
+        should_retry=is_rate_limit_error,
         max_retries=settings.screener_max_retries,
         what=what,
     )
@@ -173,7 +163,7 @@ def fetch_history_batch(symbols: list[str]) -> dict[str, list[float]]:
     if not symbols:
         return {}
 
-    df = _with_retry(
+    df = with_retry(
         lambda: yf.download(
             symbols,
             period=_HISTORY_PERIOD,
@@ -208,7 +198,7 @@ def fetch_fundamentals(symbol: str) -> dict[str, Any]:
     import yfinance as yf
 
     try:
-        info = _with_retry(lambda: yf.Ticker(symbol).info, what=f"info {symbol}")
+        info = with_retry(lambda: yf.Ticker(symbol).info, what=f"info {symbol}")
         return info or {}
     except Exception as exc:  # noqa: BLE001 - ベストエフォート
         logger.info("fundamentals unavailable for %s: %s", symbol, exc)
