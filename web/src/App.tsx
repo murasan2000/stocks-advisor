@@ -1,5 +1,5 @@
 import { Sparkles, X } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AiButton } from './components/chat/AiButton'
 import { ChatModal } from './components/chat/ChatModal'
 import { ChatToast } from './components/chat/ChatToast'
@@ -8,8 +8,12 @@ import { FilterPanel, type PanelFilters } from './components/screener/FilterPane
 import { ScreenerHeader } from './components/screener/ScreenerHeader'
 import { StatCards } from './components/screener/StatCards'
 import { StockTable } from './components/screener/StockTable'
+import { WatchlistPage } from './components/watchlist/WatchlistPage'
 import { useChat } from './hooks/useChat'
 import { useScreener } from './hooks/useScreener'
+import { useWatchlist } from './hooks/useWatchlist'
+
+export type View = 'screener' | 'watchlist'
 
 export default function App() {
   const chat = useChat()
@@ -25,8 +29,30 @@ export default function App() {
     refreshing,
     refresh,
   } = useScreener()
+  const {
+    watchedCodes,
+    rows: watchlistRows,
+    loading: watchlistLoading,
+    loadCodes: loadWatchlistCodes,
+    loadRows: loadWatchlistRows,
+    toggle: toggleWatch,
+  } = useWatchlist()
+  const [view, setView] = useState<View>('screener')
   // 企業分析の対象として選択中の銘柄コード
   const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  // ★状態はどちらの画面でも必要なため、起動時に一度だけ取得する
+  useEffect(() => {
+    void loadWatchlistCodes()
+  }, [loadWatchlistCodes])
+
+  const handleChangeView = useCallback(
+    (next: View) => {
+      setView(next)
+      if (next === 'watchlist') void loadWatchlistRows()
+    },
+    [loadWatchlistRows],
+  )
 
   // 検索語の反映。関数更新にして恒常的に同一 identity を保ち、
   // ScreenerHeader 側のデバウンスが無関係な再描画でリセットされないようにする。
@@ -72,57 +98,68 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar view={view} onChangeView={handleChangeView} />
 
-      <main className="screener-main">
-        <ScreenerHeader
-          meta={meta}
-          total={total}
-          q={filters.q}
-          onSearch={handleSearch}
-          refreshing={refreshing}
-          onRefresh={refresh}
+      {view === 'watchlist' ? (
+        <WatchlistPage
+          rows={watchlistRows}
+          loading={watchlistLoading}
+          watchedCodes={watchedCodes}
+          onToggleWatch={toggleWatch}
         />
+      ) : (
+        <main className="screener-main">
+          <ScreenerHeader
+            meta={meta}
+            total={total}
+            q={filters.q}
+            onSearch={handleSearch}
+            refreshing={refreshing}
+            onRefresh={refresh}
+          />
 
-        <StatCards summary={summary} />
+          <StatCards summary={summary} />
 
-        {error ? <div className="error-banner">{error}</div> : null}
+          {error ? <div className="error-banner">{error}</div> : null}
 
-        <div className="screener-body">
-          <FilterPanel filters={filters} onApply={handleApplyFilters} />
+          <div className="screener-body">
+            <FilterPanel filters={filters} onApply={handleApplyFilters} />
 
-          <section className="results">
-            <div className="results-meta">
-              <span className="results-count">
-                {total.toLocaleString('ja-JP')} 件
-              </span>
-              {loading ? (
-                <span className="loading-text">
-                  読み込み中… ({stocks.length.toLocaleString('ja-JP')})
+            <section className="results">
+              <div className="results-meta">
+                <span className="results-count">
+                  {total.toLocaleString('ja-JP')} 件
                 </span>
-              ) : null}
-            </div>
-            {loading ? (
-              <div className="loading-bar">
-                <span />
+                {loading ? (
+                  <span className="loading-text">
+                    読み込み中… ({stocks.length.toLocaleString('ja-JP')})
+                  </span>
+                ) : null}
               </div>
-            ) : null}
-            <StockTable
-              stocks={stocks}
-              sortBy={filters.sortBy}
-              sortDesc={filters.sortDesc}
-              onSort={handleSort}
-              loading={loading}
-              selected={selected}
-              onToggleSelect={toggleSelect}
-            />
-          </section>
-        </div>
+              {loading ? (
+                <div className="loading-bar">
+                  <span />
+                </div>
+              ) : null}
+              <StockTable
+                stocks={stocks}
+                sortBy={filters.sortBy}
+                sortDesc={filters.sortDesc}
+                onSort={handleSort}
+                loading={loading}
+                selected={selected}
+                onToggleSelect={toggleSelect}
+                watchedCodes={watchedCodes}
+                onToggleWatch={toggleWatch}
+              />
+            </section>
+          </div>
 
-        <p className="screener-disclaimer">
-          ※本情報は投資判断の参考であり、投資勧誘を目的としたものではありません。投資判断はご自身の責任で行ってください。
-        </p>
-      </main>
+          <p className="screener-disclaimer">
+            ※本情報は投資判断の参考であり、投資勧誘を目的としたものではありません。投資判断はご自身の責任で行ってください。
+          </p>
+        </main>
+      )}
 
       {selected.size > 0 ? (
         <div className="select-action-bar">
