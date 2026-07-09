@@ -6,6 +6,7 @@ import type {
   Job,
   ScreenerMeta,
   SendMessageResponse,
+  StockRow,
   StocksResponse,
 } from '../types/api'
 
@@ -63,6 +64,35 @@ export function refreshSnapshot(): Promise<CreateJobResponse> {
 
 export function getJob(jobId: string): Promise<Job> {
   return request<Job>(`/jobs/${jobId}`)
+}
+
+// ───────────────────────────────────────────────
+// ウォッチリスト
+// ───────────────────────────────────────────────
+
+export function getWatchlist(): Promise<StockRow[]> {
+  return request<StockRow[]>('/watchlist')
+}
+
+export function getWatchlistCodes(): Promise<string[]> {
+  return request<string[]>('/watchlist/codes')
+}
+
+// 追加/削除はレスポンスボディが空のため request()（.json() 呼び出し）は使わない。
+export function addToWatchlist(code: string): Promise<void> {
+  return fetch(`${BASE_URL}/watchlist/${encodeURIComponent(code)}`, {
+    method: 'POST',
+  }).then((res) => {
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+  })
+}
+
+export function removeFromWatchlist(code: string): Promise<void> {
+  return fetch(`${BASE_URL}/watchlist/${encodeURIComponent(code)}`, {
+    method: 'DELETE',
+  }).then((res) => {
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+  })
 }
 
 // ───────────────────────────────────────────────

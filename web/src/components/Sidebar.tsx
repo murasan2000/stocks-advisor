@@ -1,20 +1,28 @@
 import { Bookmark, LineChart, Settings, SlidersHorizontal } from 'lucide-react'
+import type { View } from '../App'
 
 interface NavItem {
+  view: View
   icon: React.ReactNode
   label: string
-  active?: boolean
-  disabled?: boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: <SlidersHorizontal size={18} />, label: 'スクリーニング', active: true },
-  { icon: <Bookmark size={18} />, label: 'ウォッチリスト', disabled: true },
-  { icon: <LineChart size={18} />, label: 'マーケット', disabled: true },
-  { icon: <Settings size={18} />, label: '設定', disabled: true },
+  { view: 'screener', icon: <SlidersHorizontal size={18} />, label: 'スクリーニング' },
+  { view: 'watchlist', icon: <Bookmark size={18} />, label: 'ウォッチリスト' },
 ]
 
-export function Sidebar() {
+const DISABLED_ITEMS = [
+  { icon: <LineChart size={18} />, label: 'マーケット' },
+  { icon: <Settings size={18} />, label: '設定' },
+]
+
+interface Props {
+  view: View
+  onChangeView: (view: View) => void
+}
+
+export function Sidebar({ view, onChangeView }: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
@@ -28,9 +36,21 @@ export function Sidebar() {
         {NAV_ITEMS.map((item) => (
           <button
             key={item.label}
-            className={`sidebar-nav-item ${item.active ? 'sidebar-nav-item--active' : ''}`}
-            disabled={item.disabled}
-            title={item.disabled ? '近日公開' : undefined}
+            className={`sidebar-nav-item ${
+              view === item.view ? 'sidebar-nav-item--active' : ''
+            }`}
+            onClick={() => onChangeView(item.view)}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </button>
+        ))}
+        {DISABLED_ITEMS.map((item) => (
+          <button
+            key={item.label}
+            className="sidebar-nav-item"
+            disabled
+            title="近日公開"
           >
             {item.icon}
             <span>{item.label}</span>
