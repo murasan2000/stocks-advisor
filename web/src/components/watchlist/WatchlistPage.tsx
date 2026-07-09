@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { StockTable } from '../screener/StockTable'
+import { StockDetail } from './StockDetail'
 import type { StockRow } from '../../types/api'
 
 interface Props {
@@ -28,7 +29,6 @@ function compare(a: StockRow, b: StockRow, key: SortableKey): number {
 export function WatchlistPage({ rows, loading, watchedCodes, onToggleWatch }: Props) {
   const [sortBy, setSortBy] = useState<SortableKey>('code')
   const [sortDesc, setSortDesc] = useState(false)
-  // 銘柄詳細チャート画面は Phase 3 で実装。それまではプレースホルダーを表示する。
   const [detailCode, setDetailCode] = useState<string | null>(null)
 
   const sortedRows = useMemo(() => {
@@ -78,12 +78,14 @@ export function WatchlistPage({ rows, loading, watchedCodes, onToggleWatch }: Pr
       )}
 
       {detailCode ? (
-        <div className="watchlist-detail-placeholder">
-          <span>{detailCode} の詳細チャートは近日公開予定です</span>
-          <button type="button" onClick={() => setDetailCode(null)}>
-            閉じる
-          </button>
-        </div>
+        <StockDetail
+          // 別銘柄への切り替え時に前の銘柄のチャート/統計が一瞬残らないよう、
+          // key を変えて確実に再マウント（内部 state をリセット）する。
+          key={detailCode}
+          code={detailCode}
+          row={rows.find((r) => r.code === detailCode)}
+          onClose={() => setDetailCode(null)}
+        />
       ) : null}
     </main>
   )

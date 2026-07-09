@@ -207,3 +207,33 @@ export const PRESETS: Preset[] = [
     apply: (f) => ({ ...f, perMax: 12, pbrMax: 1.0, dividendYieldMin: 3 }),
   },
 ]
+
+// ───────────────────────────────────────────────
+// 銘柄詳細チャート
+// ───────────────────────────────────────────────
+
+export type HistoryPeriod = '3mo' | '6mo' | '1y' | '2y' | '5y' | '10y'
+
+export const HISTORY_PERIODS: { key: HistoryPeriod; label: string }[] = [
+  { key: '3mo', label: '3ヶ月' },
+  { key: '6mo', label: '6ヶ月' },
+  { key: '1y', label: '1年' },
+  { key: '2y', label: '2年' },
+  { key: '5y', label: '5年' },
+  { key: '10y', label: '10年' },
+]
+
+export interface Candle {
+  date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export interface StockHistory {
+  code: string
+  period: HistoryPeriod
+  candles: Candle[]
+}
