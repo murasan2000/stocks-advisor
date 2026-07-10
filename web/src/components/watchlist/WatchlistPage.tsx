@@ -8,6 +8,9 @@ interface Props {
   loading: boolean
   watchedCodes: Set<string>
   onToggleWatch: (code: string) => void
+  // AI企業分析の対象選択（スクリーニング画面と共通の state をそのまま使う）
+  selected: Set<string>
+  onToggleSelect: (code: string) => void
 }
 
 // StockRow の中でソート対象になり得るキーのみ（比較可能な値を持つもの）
@@ -26,7 +29,14 @@ function compare(a: StockRow, b: StockRow, key: SortableKey): number {
   return an - bn
 }
 
-export function WatchlistPage({ rows, loading, watchedCodes, onToggleWatch }: Props) {
+export function WatchlistPage({
+  rows,
+  loading,
+  watchedCodes,
+  onToggleWatch,
+  selected,
+  onToggleSelect,
+}: Props) {
   const [sortBy, setSortBy] = useState<SortableKey>('code')
   const [sortDesc, setSortDesc] = useState(false)
   const [detailCode, setDetailCode] = useState<string | null>(null)
@@ -74,6 +84,8 @@ export function WatchlistPage({ rows, loading, watchedCodes, onToggleWatch }: Pr
           watchedCodes={watchedCodes}
           onToggleWatch={onToggleWatch}
           onRowClick={setDetailCode}
+          selected={selected}
+          onToggleSelect={onToggleSelect}
         />
       )}
 

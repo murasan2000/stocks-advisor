@@ -106,6 +106,8 @@ export default function App() {
           loading={watchlistLoading}
           watchedCodes={watchedCodes}
           onToggleWatch={toggleWatch}
+          selected={selected}
+          onToggleSelect={toggleSelect}
         />
       ) : (
         <main className="screener-main">
