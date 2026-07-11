@@ -3,9 +3,11 @@ import type {
   ConversationMessage,
   CreateJobResponse,
   Filters,
+  HistoryPeriod,
   Job,
   ScreenerMeta,
   SendMessageResponse,
+  StockHistory,
   StockRow,
   StocksResponse,
 } from '../types/api'
@@ -93,6 +95,15 @@ export function removeFromWatchlist(code: string): Promise<void> {
   }).then((res) => {
     if (!res.ok) throw new Error(`API error ${res.status}`)
   })
+}
+
+export function getStockHistory(
+  code: string,
+  period: HistoryPeriod,
+): Promise<StockHistory> {
+  return request<StockHistory>(
+    `/stocks/${encodeURIComponent(code)}/history?period=${period}`,
+  )
 }
 
 // ───────────────────────────────────────────────
