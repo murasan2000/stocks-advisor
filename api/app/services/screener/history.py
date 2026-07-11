@@ -3,10 +3,15 @@
 全銘柄スキャン（fetcher.py）とは異なり、都度1銘柄のみのオンデマンド取得のため
 レートリミットの影響は軽微。live は yfinance、mock は銘柄コードを種に
 した決定論的なランダムウォークで合成する（テスト・オフライン動作のため）。
+
+日足データは当日中に頻繁な更新は不要なため、utils/cache.py の
+async_ttl_cache（企業概要・EDINETと同じ既存パターン）で短期キャッシュする
+（#37）。詳細パネルの再訪問・期間タブの再切替が高速化される。
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import math
 from datetime import date, timedelta
@@ -14,6 +19,12 @@ from typing import Any
 
 from app.services.screener.fetcher import with_retry
 from app.types.api import Candle, HistoryPeriod
+from app.utils.cache import async_ttl_cache
+
+_HISTORY_CACHE_TTL_SECONDS = 900.0  # 15分
+# キーは (symbol, period) の組。既定の maxsize=256 だと大きめのウォッチリスト
+# （銘柄数 × 6期間）で枠を使い切りやすいため、余裕を持たせる。
+_HISTORY_CACHE_MAXSIZE = 2000
 
 # 期間ごとのおおよその営業日数（合成データの本数決定に使用）
 _PERIOD_TRADING_DAYS: dict[HistoryPeriod, int] = {
@@ -40,6 +51,14 @@ def fetch_candles_live(symbol: str, period: HistoryPeriod) -> list[Candle]:
     if df is None or df.empty:
         return []
     return _rows_to_candles(df)
+
+
+@async_ttl_cache(ttl_seconds=_HISTORY_CACHE_TTL_SECONDS, maxsize=_HISTORY_CACHE_MAXSIZE)
+async def fetch_candles_live_cached(symbol: str, period: HistoryPeriod) -> list[Candle]:
+    """fetch_candles_live の結果を短期キャッシュする（同一銘柄・同一期間の
+    再取得を抑え、詳細パネルの再訪問・期間タブの切替を高速化する）。
+    """
+    return await asyncio.to_thread(fetch_candles_live, symbol, period)
 
 
 def _rows_to_candles(df: Any) -> list[Candle]:
