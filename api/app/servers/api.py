@@ -14,7 +14,7 @@ from app.services.chat.repository import ChatRepository
 from app.services.chat.service import accept_message, run_chat_agent_job
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_refresh_job
-from app.services.screener.history import fetch_candles_live, synth_candles
+from app.services.screener.history import fetch_candles_live_cached, synth_candles
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
 from app.services.watchlist.repository import WatchlistRepository
@@ -194,13 +194,14 @@ async def stock_history(
     code: str,
     period: HistoryPeriod = Query(default="1y"),  # noqa: B008  (FastAPI 既定値の慣用)
 ) -> StockHistory:
-    """1銘柄分の日足 OHLCV を返す（都度オンデマンド取得、全銘柄一括とは別経路）。"""
+    """1銘柄分の日足 OHLCV を返す（都度オンデマンド取得、全銘柄一括とは別経路）。
+
+    短期キャッシュ（#37）により、同一銘柄・同一期間の再取得は高速に返る。
+    """
     if settings.external_api_mode == "live":
         from app.services.external.symbols import to_yahoo_symbol
 
-        candles = await asyncio.to_thread(
-            fetch_candles_live, to_yahoo_symbol(code), period
-        )
+        candles = await fetch_candles_live_cached(to_yahoo_symbol(code), period)
     else:
         candles = synth_candles(code, period)
     return StockHistory(code=code, period=period, candles=candles)
