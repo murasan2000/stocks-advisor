@@ -237,3 +237,25 @@ export interface StockHistory {
   period: HistoryPeriod
   candles: Candle[]
 }
+
+// ───────────────────────────────────────────────
+// 保有銘柄（ポートフォリオ）
+// ───────────────────────────────────────────────
+
+export interface Holding {
+  code: string
+  symbol: string
+  name: string
+  market: string
+  quantity: number
+  avg_cost: number
+  price: number | null
+  cost_value: number
+  market_value: number | null
+  pnl: number | null
+  pnl_pct: number | null
+}
+
+export interface ImportResult {
+  imported: number
+}
