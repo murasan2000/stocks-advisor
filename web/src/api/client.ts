@@ -4,6 +4,8 @@ import type {
   CreateJobResponse,
   Filters,
   HistoryPeriod,
+  Holding,
+  ImportResult,
   Job,
   ScreenerMeta,
   SendMessageResponse,
@@ -104,6 +106,53 @@ export function getStockHistory(
   return request<StockHistory>(
     `/stocks/${encodeURIComponent(code)}/history?period=${period}`,
   )
+}
+
+// ───────────────────────────────────────────────
+// 保有銘柄（ポートフォリオ）
+// ───────────────────────────────────────────────
+
+export function getHoldings(): Promise<Holding[]> {
+  return request<Holding[]>('/portfolio/holdings')
+}
+
+// レスポンスボディが空のため request()（.json() 呼び出し）は使わない。
+export function upsertHolding(
+  code: string,
+  quantity: number,
+  avgCost: number,
+): Promise<void> {
+  return fetch(`${BASE_URL}/portfolio/holdings/${encodeURIComponent(code)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ quantity, avg_cost: avgCost }),
+  }).then((res) => {
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+  })
+}
+
+export function removeHolding(code: string): Promise<void> {
+  return fetch(`${BASE_URL}/portfolio/holdings/${encodeURIComponent(code)}`, {
+    method: 'DELETE',
+  }).then((res) => {
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+  })
+}
+
+// multipart/form-data はブラウザが境界(boundary)付きの Content-Type を
+// 自動設定する必要があるため、request() のヘッダーは使わず直接 fetch する。
+export async function importHoldingsCsv(file: File): Promise<ImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE_URL}/portfolio/holdings/import`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`API error ${res.status}: ${body || res.statusText}`)
+  }
+  return res.json() as Promise<ImportResult>
 }
 
 // ───────────────────────────────────────────────

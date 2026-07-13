@@ -4,16 +4,18 @@ import { AiButton } from './components/chat/AiButton'
 import { ChatModal } from './components/chat/ChatModal'
 import { ChatToast } from './components/chat/ChatToast'
 import { Sidebar } from './components/Sidebar'
+import { PortfolioPage } from './components/portfolio/PortfolioPage'
 import { FilterPanel, type PanelFilters } from './components/screener/FilterPanel'
 import { ScreenerHeader } from './components/screener/ScreenerHeader'
 import { StatCards } from './components/screener/StatCards'
 import { StockTable } from './components/screener/StockTable'
 import { WatchlistPage } from './components/watchlist/WatchlistPage'
 import { useChat } from './hooks/useChat'
+import { usePortfolio } from './hooks/usePortfolio'
 import { useScreener } from './hooks/useScreener'
 import { useWatchlist } from './hooks/useWatchlist'
 
-export type View = 'screener' | 'watchlist'
+export type View = 'screener' | 'watchlist' | 'portfolio'
 
 export default function App() {
   const chat = useChat()
@@ -37,6 +39,15 @@ export default function App() {
     loadRows: loadWatchlistRows,
     toggle: toggleWatch,
   } = useWatchlist()
+  const {
+    holdings,
+    loading: portfolioLoading,
+    error: portfolioError,
+    loadHoldings,
+    addHolding,
+    removeHolding,
+    importCsv,
+  } = usePortfolio()
   const [view, setView] = useState<View>('screener')
   // 企業分析の対象として選択中の銘柄コード
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -50,8 +61,9 @@ export default function App() {
     (next: View) => {
       setView(next)
       if (next === 'watchlist') void loadWatchlistRows()
+      if (next === 'portfolio') void loadHoldings()
     },
-    [loadWatchlistRows],
+    [loadWatchlistRows, loadHoldings],
   )
 
   // 検索語の反映。関数更新にして恒常的に同一 identity を保ち、
@@ -108,6 +120,15 @@ export default function App() {
           onToggleWatch={toggleWatch}
           selected={selected}
           onToggleSelect={toggleSelect}
+        />
+      ) : view === 'portfolio' ? (
+        <PortfolioPage
+          holdings={holdings}
+          loading={portfolioLoading}
+          error={portfolioError}
+          onAdd={addHolding}
+          onRemove={removeHolding}
+          onImportCsv={importCsv}
         />
       ) : (
         <main className="screener-main">
