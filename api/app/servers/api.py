@@ -7,13 +7,15 @@ from collections.abc import AsyncGenerator, Coroutine
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
 
 from app.services.agents.runner import run_agent_job
 from app.services.chat.repository import ChatRepository
 from app.services.chat.service import accept_message, run_chat_agent_job
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_refresh_job
+from app.services.portfolio.repository import HoldingsRepository
+from app.services.portfolio.service import PortfolioService
 from app.services.screener.history import fetch_candles_live_cached, synth_candles
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
@@ -24,6 +26,9 @@ from app.types.api import (
     CreateJobResponse,
     HealthResponse,
     HistoryPeriod,
+    Holding,
+    HoldingRequest,
+    ImportResult,
     ScreenerMeta,
     StockHistory,
     StockRow,
@@ -47,6 +52,8 @@ _screener = ScreenerService(_screener_repo)
 _chat_repo = ChatRepository(settings.db_path)
 _watchlist_repo = WatchlistRepository(settings.db_path)
 _watchlist = WatchlistService(_watchlist_repo, _screener_repo)
+_holdings_repo = HoldingsRepository(settings.db_path)
+_portfolio = PortfolioService(_holdings_repo, _screener_repo)
 
 # イベントループはタスクへ弱参照しか持たないため、参照を保持しないと
 # 実行中のバックグラウンドタスクが GC で消え得る（Python 公式ドキュメントの注意）。
@@ -67,6 +74,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     await _screener_repo.initialize()
     await _chat_repo.initialize()
     await _watchlist_repo.initialize()
+    await _holdings_repo.initialize()
     # mock モードかつキャッシュが空なら、合成データで即時シードする（開発用）。
     if settings.external_api_mode != "live" and await _screener_repo.count() == 0:
         logger.info("seeding screener snapshot with mock data")
@@ -181,6 +189,43 @@ async def watchlist_add(code: str) -> Response:
 async def watchlist_remove(code: str) -> Response:
     """解除する（未登録でもエラーにしない）。"""
     await _watchlist.remove(code)
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# 保有銘柄（ポートフォリオ）
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/portfolio/holdings", response_model=list[Holding])
+async def portfolio_holdings() -> list[Holding]:
+    """保有銘柄一覧を返す（スナップショット結合済み、評価損益算出済み）。"""
+    return await _portfolio.list_holdings()
+
+
+# 注意: /holdings/import は /holdings/{code} より前に登録する。
+# Starlette のルーティングは登録順で最初にマッチしたものを使うため、
+# 後ろに置くと "import" が {code} にマッチして誤ってアップサート処理に届いてしまう。
+@app.post("/api/v1/portfolio/holdings/import", response_model=ImportResult)
+async def portfolio_import(
+    file: UploadFile = File(...),  # noqa: B008  (FastAPI 既定値の慣用)
+) -> ImportResult:
+    """楽天証券の保有商品一覧CSVをインポートする（アップサート、既存は削除しない）。"""
+    data = await file.read()
+    return await _portfolio.import_csv(data)
+
+
+@app.post("/api/v1/portfolio/holdings/{code}", status_code=200)
+async def portfolio_upsert(code: str, request: HoldingRequest) -> Response:
+    """保有銘柄を追加/更新する（既存なら数量・平均取得単価を上書き）。"""
+    await _portfolio.upsert(code, request.quantity, request.avg_cost)
+    return Response(status_code=200)
+
+
+@app.delete("/api/v1/portfolio/holdings/{code}", status_code=204)
+async def portfolio_remove(code: str) -> Response:
+    """保有銘柄を削除する（未登録でもエラーにしない）。"""
+    await _portfolio.remove(code)
     return Response(status_code=204)
 
 

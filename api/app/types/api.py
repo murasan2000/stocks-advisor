@@ -118,3 +118,37 @@ class StockHistory(BaseModel):
     code: str
     period: HistoryPeriod
     candles: list[Candle]
+
+
+# ---------------------------------------------------------------------------
+# 保有銘柄（ポートフォリオ）
+# ---------------------------------------------------------------------------
+
+
+class Holding(BaseModel):
+    """保有銘柄の1行（スナップショット結合済み・評価損益算出済み）。"""
+
+    code: str
+    symbol: str
+    name: str
+    market: str
+    quantity: float
+    avg_cost: float
+    price: float | None = None  # 現在値（スナップショット由来）
+    cost_value: float  # quantity * avg_cost（取得額）
+    market_value: float | None = None  # quantity * price（評価額）
+    pnl: float | None = None  # market_value - cost_value（評価損益）
+    pnl_pct: float | None = None  # pnl / cost_value * 100（評価損益率）
+
+
+class HoldingRequest(BaseModel):
+    """保有銘柄の追加/更新リクエスト。"""
+
+    quantity: float = Field(gt=0)
+    avg_cost: float = Field(gt=0)
+
+
+class ImportResult(BaseModel):
+    """CSVインポートの結果。"""
+
+    imported: int  # 反映した銘柄数（重複統合後）
