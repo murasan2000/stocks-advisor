@@ -129,6 +129,10 @@ export default function App() {
           onAdd={addHolding}
           onRemove={removeHolding}
           onImportCsv={importCsv}
+          watchedCodes={watchedCodes}
+          onToggleWatch={toggleWatch}
+          selected={selected}
+          onToggleSelect={toggleSelect}
         />
       ) : (
         <main className="screener-main">

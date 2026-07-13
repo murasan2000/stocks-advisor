@@ -25,6 +25,10 @@ interface Props {
   onAdd: (code: string, quantity: number, avgCost: number) => Promise<void>
   onRemove: (code: string) => Promise<void>
   onImportCsv: (file: File) => Promise<{ imported: number }>
+  watchedCodes: Set<string>
+  onToggleWatch: (code: string) => void
+  selected: Set<string>
+  onToggleSelect: (code: string) => void
 }
 
 export function PortfolioPage({
@@ -34,6 +38,10 @@ export function PortfolioPage({
   onAdd,
   onRemove,
   onImportCsv,
+  watchedCodes,
+  onToggleWatch,
+  selected,
+  onToggleSelect,
 }: Props) {
   const [sortBy, setSortBy] = useState<SortableKey>('market_value')
   const [sortDesc, setSortDesc] = useState(true)
@@ -182,6 +190,10 @@ export function PortfolioPage({
         sortDesc={sortDesc}
         onSort={handleSort}
         onRemove={(code) => void onRemove(code)}
+        watchedCodes={watchedCodes}
+        onToggleWatch={onToggleWatch}
+        selected={selected}
+        onToggleSelect={onToggleSelect}
       />
     </main>
   )

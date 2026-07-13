@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Star, Trash2 } from 'lucide-react'
 import type { Holding } from '../../types/api'
 import { fmtNum, fmtPct, fmtPrice } from '../../utils/format'
 
@@ -28,6 +28,11 @@ interface Props {
   sortDesc: boolean
   onSort: (key: string) => void
   onRemove: (code: string) => void
+  watchedCodes: Set<string>
+  onToggleWatch: (code: string) => void
+  // 銘柄選択（AI企業分析）はスクリーニング/ウォッチリストと共通の任意機能
+  selected?: Set<string>
+  onToggleSelect?: (code: string) => void
   onRowClick?: (code: string) => void
 }
 
@@ -38,13 +43,25 @@ export function HoldingsTable({
   sortDesc,
   onSort,
   onRemove,
+  watchedCodes,
+  onToggleWatch,
+  selected,
+  onToggleSelect,
   onRowClick,
 }: Props) {
+  const showSelectCol = onToggleSelect != null
+
   return (
     <div className="table-wrap">
       <table className="stock-table">
         <thead>
           <tr>
+            {showSelectCol ? (
+              <th className="select-col" title="選択して企業分析に利用">
+                分析
+              </th>
+            ) : null}
+            <th className="watch-col" title="ウォッチリスト" />
             {COLUMNS.map((c) => (
               <th
                 key={c.key}
@@ -69,12 +86,41 @@ export function HoldingsTable({
         <tbody>
           {holdings.map((h) => {
             const up = (h.pnl ?? 0) >= 0
+            const isSelected = selected?.has(h.code) ?? false
+            const isWatched = watchedCodes.has(h.code)
             return (
               <tr
                 key={h.code}
-                className={onRowClick ? 'row--clickable' : ''}
+                className={`${isSelected ? 'row--selected' : ''} ${
+                  onRowClick ? 'row--clickable' : ''
+                }`}
                 onClick={onRowClick ? () => onRowClick(h.code) : undefined}
               >
+                {showSelectCol ? (
+                  <td className="select-col" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggleSelect?.(h.code)}
+                      aria-label={`${h.name} を分析対象に選択`}
+                    />
+                  </td>
+                ) : null}
+                <td className="watch-col" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className={`watch-star ${isWatched ? 'watch-star--active' : ''}`}
+                    onClick={() => onToggleWatch(h.code)}
+                    aria-label={
+                      isWatched
+                        ? `${h.name} をウォッチリストから解除`
+                        : `${h.name} をウォッチリストに追加`
+                    }
+                    title={isWatched ? 'ウォッチリストから解除' : 'ウォッチリストに追加'}
+                  >
+                    <Star size={15} fill={isWatched ? 'currentColor' : 'none'} />
+                  </button>
+                </td>
                 <td className="code">{h.code}</td>
                 <td>
                   <div className="name-cell">
