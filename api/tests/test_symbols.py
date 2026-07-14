@@ -19,3 +19,10 @@ def test_already_suffixed_or_special() -> None:
     assert to_yahoo_symbol("^N225") == "^N225"
     assert to_yahoo_symbol("USDJPY=X") == "USDJPY=X"
     assert to_yahoo_symbol("") == ""
+
+
+def test_us_ticker_passthrough() -> None:
+    # 米国株ティッカーはサフィックスを付けずそのまま返す（yfinanceがそのまま受け付ける）
+    assert to_yahoo_symbol("AAPL") == "AAPL"
+    assert to_yahoo_symbol("aapl") == "AAPL"
+    assert to_yahoo_symbol("BRK.B") == "BRK.B"  # 既に"."を含むため素通し
