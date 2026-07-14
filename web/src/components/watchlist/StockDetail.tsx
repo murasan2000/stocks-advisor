@@ -10,15 +10,25 @@ import {
 import { fmtMarketCap, fmtNum, fmtPct, fmtPrice, fmtVolume } from '../../utils/format'
 import { CandlestickChart } from './CandlestickChart'
 
+// ポートフォリオ画面から渡す保有銘柄の統計（保有していない場合は undefined）
+export interface HoldingStats {
+  quantity: number
+  avgCost: number
+  marketValue: number | null
+  pnl: number | null
+  pnlPct: number | null
+}
+
 interface Props {
   code: string
   row: StockRow | undefined
   onClose: () => void
+  holding?: HoldingStats
 }
 
 const DEFAULT_PERIOD: HistoryPeriod = '1y'
 
-export function StockDetail({ code, row, onClose }: Props) {
+export function StockDetail({ code, row, onClose, holding }: Props) {
   const [period, setPeriod] = useState<HistoryPeriod>(DEFAULT_PERIOD)
   const [candles, setCandles] = useState<Candle[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,6 +62,7 @@ export function StockDetail({ code, row, onClose }: Props) {
   const prevClose = candles.at(-2)?.close
   const changePct =
     latest && prevClose ? ((latest.close - prevClose) / prevClose) * 100 : null
+  const pnlClass = holding && (holding.pnl ?? 0) >= 0 ? 'up' : 'down'
 
   return (
     <section className="stock-detail">
@@ -87,13 +98,37 @@ export function StockDetail({ code, row, onClose }: Props) {
       ) : null}
       {error ? <div className="error-banner">{error}</div> : null}
       {!loading && !error && candles.length > 0 ? (
-        <CandlestickChart candles={candles} />
+        <CandlestickChart candles={candles} avgCost={holding?.avgCost} />
       ) : null}
       {!loading && !error && candles.length === 0 ? (
         <div className="table-empty">チャートデータを取得できませんでした</div>
       ) : null}
 
       <div className="stock-detail-stats">
+        {holding ? (
+          <>
+            <div className="detail-stat">
+              <span className="detail-stat-label">保有数量</span>
+              <span className="detail-stat-value">{fmtNum(holding.quantity, 0)}</span>
+            </div>
+            <div className="detail-stat">
+              <span className="detail-stat-label">取得単価</span>
+              <span className="detail-stat-value">{fmtPrice(holding.avgCost)}</span>
+            </div>
+            <div className="detail-stat">
+              <span className="detail-stat-label">評価額</span>
+              <span className="detail-stat-value strong">{fmtPrice(holding.marketValue)}</span>
+            </div>
+            <div className="detail-stat">
+              <span className="detail-stat-label">評価損益</span>
+              <span className={`detail-stat-value ${pnlClass}`}>{fmtPrice(holding.pnl)}</span>
+            </div>
+            <div className="detail-stat">
+              <span className="detail-stat-label">評価損益率</span>
+              <span className={`detail-stat-value ${pnlClass}`}>{fmtPct(holding.pnlPct)}</span>
+            </div>
+          </>
+        ) : null}
         <div className="detail-stat">
           <span className="detail-stat-label">現在値</span>
           <span className="detail-stat-value strong">

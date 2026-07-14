@@ -13,6 +13,7 @@
   --accent-3: #22d3ee;
   --success: #22c55e;
   --error: #ef4444;
+  --warning: #fbbf24;
   --radius: 12px;
   --radius-sm: 8px;
 }
@@ -819,11 +820,11 @@ input {
   transition: color 0.15s, background 0.15s;
 }
 .watch-star:hover {
-  color: #fbbf24;
+  color: var(--warning);
   background: var(--surface-hover);
 }
 .watch-star--active {
-  color: #fbbf24;
+  color: var(--warning);
 }
 
 /* ウォッチリスト画面 */

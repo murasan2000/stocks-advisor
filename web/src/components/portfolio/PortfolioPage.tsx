@@ -1,6 +1,7 @@
 import { Plus, Upload } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
-import type { Holding } from '../../types/api'
+import type { Holding, StockRow } from '../../types/api'
+import { StockDetail } from '../watchlist/StockDetail'
 import { HoldingsTable } from './HoldingsTable'
 import { PortfolioSummary } from './PortfolioSummary'
 
@@ -29,6 +30,8 @@ interface Props {
   onToggleWatch: (code: string) => void
   selected: Set<string>
   onToggleSelect: (code: string) => void
+  // 詳細パネルの時価総額/PER/PBR等はスクリーナー由来のスナップショットを流用する
+  stocks: StockRow[]
 }
 
 export function PortfolioPage({
@@ -42,9 +45,11 @@ export function PortfolioPage({
   onToggleWatch,
   selected,
   onToggleSelect,
+  stocks,
 }: Props) {
   const [sortBy, setSortBy] = useState<SortableKey>('market_value')
   const [sortDesc, setSortDesc] = useState(true)
+  const [detailCode, setDetailCode] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [addCode, setAddCode] = useState('')
   const [addQuantity, setAddQuantity] = useState('')
@@ -59,6 +64,38 @@ export function PortfolioPage({
     const sorted = [...holdings].sort((a, b) => compare(a, b, sortBy))
     return sortDesc ? sorted.reverse() : sorted
   }, [holdings, sortBy, sortDesc])
+
+  const detailHolding = useMemo(
+    () => holdings.find((h) => h.code === detailCode),
+    [holdings, detailCode],
+  )
+  // stocks はスクリーナーの検索/絞り込み状態に依存するため、保有銘柄がその条件から
+  // 外れていても表示できるよう、見つからない場合は Holding 自身の情報で最低限を補う。
+  const detailRow: StockRow | undefined = useMemo(() => {
+    const fromScreener = stocks.find((r) => r.code === detailCode)
+    if (fromScreener) return fromScreener
+    if (!detailHolding) return undefined
+    return {
+      code: detailHolding.code,
+      symbol: detailHolding.symbol,
+      name: detailHolding.name,
+      market: detailHolding.market,
+      price: detailHolding.price,
+      change_pct: null,
+      volume: null,
+      market_cap: null,
+      per: null,
+      pbr: null,
+      dividend_yield: null,
+      roe: null,
+      rsi: null,
+      high_5y: null,
+      low_1y: null,
+      drop_from_high_pct: null,
+      rebound_from_low_pct: null,
+      score: 0,
+    }
+  }, [stocks, detailCode, detailHolding])
 
   const handleSort = (key: string) => {
     if (key === sortBy) {
@@ -189,12 +226,38 @@ export function PortfolioPage({
         sortBy={sortBy}
         sortDesc={sortDesc}
         onSort={handleSort}
-        onRemove={(code) => void onRemove(code)}
+        onRemove={(code) => {
+          void onRemove(code)
+          // 詳細パネルを開いたまま削除した場合、存在しない銘柄のパネルが残らないよう閉じる
+          if (code === detailCode) setDetailCode(null)
+        }}
         watchedCodes={watchedCodes}
         onToggleWatch={onToggleWatch}
         selected={selected}
         onToggleSelect={onToggleSelect}
+        onRowClick={setDetailCode}
       />
+
+      {detailCode ? (
+        <StockDetail
+          // 別銘柄への切り替え時に前の銘柄のチャート/統計が残らないよう再マウントする
+          key={detailCode}
+          code={detailCode}
+          row={detailRow}
+          onClose={() => setDetailCode(null)}
+          holding={
+            detailHolding
+              ? {
+                  quantity: detailHolding.quantity,
+                  avgCost: detailHolding.avg_cost,
+                  marketValue: detailHolding.market_value,
+                  pnl: detailHolding.pnl,
+                  pnlPct: detailHolding.pnl_pct,
+                }
+              : undefined
+          }
+        />
+      ) : null}
     </main>
   )
 }

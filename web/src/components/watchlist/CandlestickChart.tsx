@@ -3,12 +3,14 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
 import type { Candle } from '../../types/api'
+import { fmtPrice } from '../../utils/format'
 import { movingAverage } from '../../utils/technicals'
 
 interface ChartRow extends Candle {
@@ -81,7 +83,13 @@ function ChartTooltip({
   )
 }
 
-export function CandlestickChart({ candles }: { candles: Candle[] }) {
+interface Props {
+  candles: Candle[]
+  // 保有銘柄の取得単価（ポートフォリオ画面から渡された場合のみラインを表示）
+  avgCost?: number | null
+}
+
+export function CandlestickChart({ candles, avgCost }: Props) {
   const ma5 = movingAverage(candles, 5)
   const ma25 = movingAverage(candles, 25)
   const ma75 = movingAverage(candles, 75)
@@ -115,6 +123,22 @@ export function CandlestickChart({ candles }: { candles: Candle[] }) {
               チャート下部に小さく収める（価格チャートと重ねて1つの Chart にする定番の手法）。 */}
           <YAxis yAxisId="volume" domain={[0, maxVolume * 3.5]} hide />
           <Tooltip content={<ChartTooltip />} />
+          {avgCost ? (
+            <ReferenceLine
+              yAxisId="price"
+              y={avgCost}
+              // 取得単価が表示中の期間の値幅から外れていても軸を広げて必ず表示する
+              ifOverflow="extendDomain"
+              stroke="var(--warning)"
+              strokeDasharray="4 4"
+              label={{
+                value: `取得単価 ${fmtPrice(avgCost)}`,
+                position: 'insideTopLeft',
+                fill: 'var(--warning)',
+                fontSize: 11,
+              }}
+            />
+          ) : null}
           <Bar yAxisId="volume" dataKey="volume" fill="var(--accent-1)" opacity={0.28} />
           <Bar yAxisId="price" dataKey="range" shape={CandleShape} />
           <Line

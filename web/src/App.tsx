@@ -133,6 +133,7 @@ export default function App() {
           onToggleWatch={toggleWatch}
           selected={selected}
           onToggleSelect={toggleSelect}
+          stocks={stocks}
         />
       ) : (
         <main className="screener-main">
