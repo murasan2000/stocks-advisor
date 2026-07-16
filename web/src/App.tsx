@@ -37,6 +37,7 @@ export default function App() {
     loading: watchlistLoading,
     loadCodes: loadWatchlistCodes,
     loadRows: loadWatchlistRows,
+    add: addWatch,
     toggle: toggleWatch,
   } = useWatchlist()
   const {
@@ -120,6 +121,7 @@ export default function App() {
           onToggleWatch={toggleWatch}
           selected={selected}
           onToggleSelect={toggleSelect}
+          onAdd={addWatch}
         />
       ) : view === 'portfolio' ? (
         <PortfolioPage

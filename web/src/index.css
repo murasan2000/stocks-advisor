@@ -1597,13 +1597,13 @@ input {
   cursor: default;
 }
 
-/* 保有銘柄（ポートフォリオ）画面 */
-.portfolio-actions {
+/* 銘柄追加アクション（保有銘柄・ウォッチリスト画面で共用） */
+.page-actions {
   display: flex;
   gap: 10px;
   margin: 16px 0;
 }
-.portfolio-action-btn {
+.page-action-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -1615,11 +1615,11 @@ input {
   font-size: 13px;
   font-weight: 600;
 }
-.portfolio-action-btn:hover:not(:disabled) {
+.page-action-btn:hover:not(:disabled) {
   background: var(--surface-hover);
   border-color: var(--accent-1);
 }
-.portfolio-action-btn:disabled {
+.page-action-btn:disabled {
   opacity: 0.55;
   cursor: default;
 }
@@ -1630,7 +1630,7 @@ input {
   color: var(--text-dim);
 }
 
-.portfolio-add-form {
+.inline-add-form {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1641,7 +1641,7 @@ input {
   border-radius: var(--radius-sm);
   flex-wrap: wrap;
 }
-.portfolio-add-form input {
+.inline-add-form input {
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1650,11 +1650,11 @@ input {
   font-size: 13px;
   width: 160px;
 }
-.portfolio-add-form input:focus {
+.inline-add-form input:focus {
   outline: none;
   border-color: var(--accent-1);
 }
-.portfolio-add-form button {
+.inline-add-form button {
   padding: 7px 16px;
   border: none;
   border-radius: var(--radius-sm);
@@ -1663,11 +1663,11 @@ input {
   font-size: 13px;
   font-weight: 700;
 }
-.portfolio-add-form button:disabled {
+.inline-add-form button:disabled {
   opacity: 0.55;
   cursor: default;
 }
-.portfolio-add-error {
+.inline-add-error {
   color: var(--error);
   font-size: 12px;
 }

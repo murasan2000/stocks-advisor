@@ -7,7 +7,14 @@ import {
   type HistoryPeriod,
   type StockRow,
 } from '../../types/api'
-import { fmtMarketCap, fmtNum, fmtPct, fmtPrice, fmtVolume } from '../../utils/format'
+import {
+  fmtMarketCapByCode,
+  fmtNum,
+  fmtPct,
+  fmtPrice,
+  fmtPriceByCode,
+  fmtVolume,
+} from '../../utils/format'
 import { CandlestickChart } from './CandlestickChart'
 
 // ポートフォリオ画面から渡す保有銘柄の統計（保有していない場合は undefined）
@@ -106,6 +113,9 @@ export function StockDetail({ code, row, onClose, holding }: Props) {
 
       <div className="stock-detail-stats">
         {holding ? (
+          // 保有銘柄の統計は常に円建て（fmtPrice固定）。取得単価・評価額は
+          // 円換算済みの値として保存する方針のため、他の統計と異なり
+          // fmtPriceByCode（銘柄コードに応じた$/¥切替）は使わない。
           <>
             <div className="detail-stat">
               <span className="detail-stat-label">保有数量</span>
@@ -132,7 +142,7 @@ export function StockDetail({ code, row, onClose, holding }: Props) {
         <div className="detail-stat">
           <span className="detail-stat-label">現在値</span>
           <span className="detail-stat-value strong">
-            {fmtPrice(latest?.close ?? row?.price ?? null)}
+            {fmtPriceByCode(code, latest?.close ?? row?.price ?? null)}
           </span>
         </div>
         <div className="detail-stat">
@@ -143,11 +153,15 @@ export function StockDetail({ code, row, onClose, holding }: Props) {
         </div>
         <div className="detail-stat">
           <span className="detail-stat-label">当日高値</span>
-          <span className="detail-stat-value">{fmtPrice(latest?.high ?? null)}</span>
+          <span className="detail-stat-value">
+            {fmtPriceByCode(code, latest?.high ?? null)}
+          </span>
         </div>
         <div className="detail-stat">
           <span className="detail-stat-label">当日安値</span>
-          <span className="detail-stat-value">{fmtPrice(latest?.low ?? null)}</span>
+          <span className="detail-stat-value">
+            {fmtPriceByCode(code, latest?.low ?? null)}
+          </span>
         </div>
         <div className="detail-stat">
           <span className="detail-stat-label">出来高</span>
@@ -155,7 +169,9 @@ export function StockDetail({ code, row, onClose, holding }: Props) {
         </div>
         <div className="detail-stat">
           <span className="detail-stat-label">時価総額</span>
-          <span className="detail-stat-value">{fmtMarketCap(row?.market_cap ?? null)}</span>
+          <span className="detail-stat-value">
+            {fmtMarketCapByCode(code, row?.market_cap ?? null)}
+          </span>
         </div>
         <div className="detail-stat">
           <span className="detail-stat-label">PER</span>
@@ -179,11 +195,15 @@ export function StockDetail({ code, row, onClose, holding }: Props) {
         </div>
         <div className="detail-stat">
           <span className="detail-stat-label">5年高値</span>
-          <span className="detail-stat-value">{fmtPrice(row?.high_5y ?? null)}</span>
+          <span className="detail-stat-value">
+            {fmtPriceByCode(code, row?.high_5y ?? null)}
+          </span>
         </div>
         <div className="detail-stat">
           <span className="detail-stat-label">1年安値</span>
-          <span className="detail-stat-value">{fmtPrice(row?.low_1y ?? null)}</span>
+          <span className="detail-stat-value">
+            {fmtPriceByCode(code, row?.low_1y ?? null)}
+          </span>
         </div>
       </div>
     </section>

@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { StockTable } from '../screener/StockTable'
 import { StockDetail } from './StockDetail'
@@ -11,6 +12,8 @@ interface Props {
   // AI企業分析の対象選択（スクリーニング画面と共通の state をそのまま使う）
   selected: Set<string>
   onToggleSelect: (code: string) => void
+  // 銘柄コード直接入力での追加（日本株コード・米国株ティッカーどちらも可）
+  onAdd: (code: string) => Promise<void>
 }
 
 // StockRow の中でソート対象になり得るキーのみ（比較可能な値を持つもの）
@@ -36,10 +39,15 @@ export function WatchlistPage({
   onToggleWatch,
   selected,
   onToggleSelect,
+  onAdd,
 }: Props) {
   const [sortBy, setSortBy] = useState<SortableKey>('code')
   const [sortDesc, setSortDesc] = useState(false)
   const [detailCode, setDetailCode] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addCode, setAddCode] = useState('')
+  const [addBusy, setAddBusy] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
 
   const sortedRows = useMemo(() => {
     const sorted = [...rows].sort((a, b) => compare(a, b, sortBy))
@@ -55,12 +63,60 @@ export function WatchlistPage({
     }
   }
 
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const code = addCode.trim().toUpperCase()
+    if (!code) {
+      setAddError('銘柄コード（日本株）またはティッカー（米国株）を入力してください')
+      return
+    }
+    setAddBusy(true)
+    setAddError(null)
+    try {
+      await onAdd(code)
+      setAddCode('')
+      setShowAddForm(false)
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setAddBusy(false)
+    }
+  }
+
   return (
     <main className="screener-main">
       <header className="screener-header-title">
         <h1>ウォッチリスト</h1>
         <p>登録した銘柄の一覧です。銘柄をクリックすると詳細を表示します。</p>
       </header>
+
+      <div className="page-actions">
+        <button
+          type="button"
+          className="page-action-btn"
+          onClick={() => setShowAddForm((v) => !v)}
+          // 送信中にフォームを閉じるとエラー表示ごと消えてしまうため、閉じられないようにする
+          disabled={addBusy}
+        >
+          <Plus size={15} />
+          銘柄を追加
+        </button>
+      </div>
+
+      {showAddForm ? (
+        <form className="inline-add-form" onSubmit={(e) => void handleAddSubmit(e)}>
+          <input
+            type="text"
+            placeholder="銘柄コード（例: 7203）またはティッカー（例: AAPL）"
+            value={addCode}
+            onChange={(e) => setAddCode(e.target.value)}
+          />
+          <button type="submit" disabled={addBusy}>
+            {addBusy ? '追加中…' : '追加'}
+          </button>
+          {addError ? <span className="inline-add-error">{addError}</span> : null}
+        </form>
+      ) : null}
 
       {loading ? (
         <div className="loading-bar">
@@ -72,7 +128,8 @@ export function WatchlistPage({
         <div className="table-empty watchlist-empty">
           まだウォッチリストに銘柄が登録されていません。
           <br />
-          スクリーニング画面の★マークから追加してください。
+          スクリーニング画面の★マーク、または上の「銘柄を追加」から登録してください
+          （米国株は上のフォームからティッカーを直接入力してください）。
         </div>
       ) : (
         <StockTable

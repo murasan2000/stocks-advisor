@@ -40,6 +40,15 @@ export function useWatchlist() {
     }
   }, [])
 
+  // コード直接入力での追加（★ボタンと異なり、追加後は quote 反映のため一覧を再取得する）
+  const add = useCallback(
+    async (code: string) => {
+      await addToWatchlist(code)
+      await loadRows()
+    },
+    [loadRows],
+  )
+
   const toggle = useCallback(async (code: string) => {
     // 連打で add/delete のリクエストが競合しないよう、処理中は無視する
     if (pendingRef.current.has(code)) return
@@ -72,5 +81,5 @@ export function useWatchlist() {
     }
   }, [watchedCodes])
 
-  return { watchedCodes, rows, loading, loadCodes, loadRows, toggle }
+  return { watchedCodes, rows, loading, loadCodes, loadRows, add, toggle }
 }
