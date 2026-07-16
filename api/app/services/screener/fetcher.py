@@ -14,6 +14,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from app.services.external.symbols import to_yahoo_symbol
 from app.services.screener.metrics import (
     compute_score,
     drop_from_high_pct,
@@ -190,15 +191,22 @@ def fetch_history_batch(symbols: list[str]) -> dict[str, list[float]]:
     return out
 
 
-def fetch_fundamentals(symbol: str) -> dict[str, Any]:
+def fetch_fundamentals(symbol: str, *, retry: bool = True) -> dict[str, Any]:
     """1銘柄のファンダメンタルズ(.info)を取得する（ベストエフォート）。
 
-    レートリミットは再試行。最終的に失敗しても {} を返し、株価情報だけで行を残す。
+    retry=True（既定・スクリーナーの一括取得向け）: レートリミットは再試行する。
+    retry=False（単発の「失敗＝機能縮退」呼び出し向け）: リトライせず、
+    失敗を即座に許容する（CLAUDE.md の「機能縮退」方針に従い、過剰リトライで
+    応答を遅くしない）。
+    最終的に失敗しても {} を返し、株価情報だけで行を残す。
     """
     import yfinance as yf
 
     try:
-        info = with_retry(lambda: yf.Ticker(symbol).info, what=f"info {symbol}")
+        if retry:
+            info = with_retry(lambda: yf.Ticker(symbol).info, what=f"info {symbol}")
+        else:
+            info = yf.Ticker(symbol).info
         return info or {}
     except Exception as exc:  # noqa: BLE001 - ベストエフォート
         logger.info("fundamentals unavailable for %s: %s", symbol, exc)
@@ -242,3 +250,17 @@ def build_live_row(
         high_5y=round(high_5y, 2) if high_5y else None,
         low_1y=round(low_1y, 2) if low_1y else None,
     )
+
+
+def fetch_live_quote(code: str) -> StockRow | None:
+    """1銘柄のライブ相場を取得する（ウォッチリスト等、単発の米国株quote向け）。
+
+    スクリーナーの一括取得と異なり、ヒストリカル取得は行わない（RSI・5年高値・
+    1年安値は None のまま）。現在値・前日比・主要ファンダメンタルズのみを返す。
+    単発の「失敗＝機能縮退」呼び出しのため、レートリミット時もリトライしない
+    （呼び出し側でプレースホルダーへフォールバックする）。
+    """
+    symbol = to_yahoo_symbol(code)
+    info = fetch_fundamentals(symbol, retry=False)
+    ticker = Ticker(code=code, name=code, market=str(info.get("exchange") or ""))
+    return build_live_row(ticker, [], info)
