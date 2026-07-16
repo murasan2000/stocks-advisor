@@ -51,9 +51,10 @@ async def run_chat_agent_job(
     chat_repo: ChatRepository,
     conversation_id: str,
     query: str,
+    tickers: list[str] | None = None,
 ) -> None:
     """エージェントジョブを実行し、完了時に AI 応答を会話へ永続化する。"""
-    await run_agent_job(job_id, job_repo, "auto", query)
+    await run_agent_job(job_id, job_repo, "auto", query, tickers)
 
     job = await job_repo.get(job_id)
     if job is None:  # 通常起こらないが、履歴保存は諦めてログのみ残す

@@ -314,7 +314,12 @@ async def post_message(
         raise HTTPException(status_code=404, detail="conversation not found")
     _spawn(
         run_chat_agent_job(
-            result.job_id, _job_repo, _chat_repo, conversation_id, request.content
+            result.job_id,
+            _job_repo,
+            _chat_repo,
+            conversation_id,
+            request.content,
+            request.tickers,
         )
     )
     return result

@@ -188,9 +188,10 @@ export function getMessages(
 export function postMessage(
   conversationId: string,
   content: string,
+  tickers?: string[],
 ): Promise<SendMessageResponse> {
   return request<SendMessageResponse>(
     `/chat/conversations/${conversationId}/messages`,
-    { method: 'POST', body: JSON.stringify({ content }) },
+    { method: 'POST', body: JSON.stringify({ content, tickers: tickers ?? [] }) },
   )
 }
