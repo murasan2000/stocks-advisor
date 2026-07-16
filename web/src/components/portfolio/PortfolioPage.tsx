@@ -158,18 +158,20 @@ export function PortfolioPage({
 
       {error ? <div className="error-banner">{error}</div> : null}
 
-      <div className="portfolio-actions">
+      <div className="page-actions">
         <button
           type="button"
-          className="portfolio-action-btn"
+          className="page-action-btn"
           onClick={() => setShowAddForm((v) => !v)}
+          // 送信中にフォームを閉じるとエラー表示ごと消えてしまうため、閉じられないようにする
+          disabled={addBusy}
         >
           <Plus size={15} />
           銘柄を追加
         </button>
         <button
           type="button"
-          className="portfolio-action-btn"
+          className="page-action-btn"
           onClick={() => fileInputRef.current?.click()}
           disabled={importBusy}
         >
@@ -188,7 +190,7 @@ export function PortfolioPage({
       {importMessage ? <p className="portfolio-import-message">{importMessage}</p> : null}
 
       {showAddForm ? (
-        <form className="portfolio-add-form" onSubmit={(e) => void handleAddSubmit(e)}>
+        <form className="inline-add-form" onSubmit={(e) => void handleAddSubmit(e)}>
           <input
             type="text"
             placeholder="銘柄コード（例: 7203）"
@@ -210,7 +212,7 @@ export function PortfolioPage({
           <button type="submit" disabled={addBusy}>
             {addBusy ? '追加中…' : '追加'}
           </button>
-          {addError ? <span className="portfolio-add-error">{addError}</span> : null}
+          {addError ? <span className="inline-add-error">{addError}</span> : null}
         </form>
       ) : null}
 

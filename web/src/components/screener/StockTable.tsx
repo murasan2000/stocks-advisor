@@ -1,10 +1,10 @@
 import { ArrowDown, ArrowUp, Star } from 'lucide-react'
 import type { StockRow } from '../../types/api'
 import {
-  fmtMarketCap,
+  fmtMarketCapByCode,
   fmtNum,
   fmtPct,
-  fmtPrice,
+  fmtPriceByCode,
   fmtVolume,
 } from '../../utils/format'
 
@@ -141,12 +141,12 @@ export function StockTable({
                     <span className="market-tag">{s.market}</span>
                   </div>
                 </td>
-                <td className="right strong">{fmtPrice(s.price)}</td>
+                <td className="right strong">{fmtPriceByCode(s.code, s.price)}</td>
                 <td className={`right ${up ? 'up' : 'down'}`}>
                   {fmtPct(s.change_pct)}
                 </td>
                 <td className="right dim">{fmtVolume(s.volume)}</td>
-                <td className="right dim">{fmtMarketCap(s.market_cap)}</td>
+                <td className="right dim">{fmtMarketCapByCode(s.code, s.market_cap)}</td>
                 <td className="right">{fmtNum(s.per, 1)}</td>
                 <td className="right">{fmtNum(s.pbr, 2)}</td>
                 <td className="right">
