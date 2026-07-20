@@ -2,8 +2,14 @@
 
 単純な矩形CSVではなく、口座区分（特定口座・NISA成長投資枠 等）ごとの
 セクション（ヘッダー行＋データ行＋「○○口座合計」集計行）が複数回繰り返される
-構造。セクションの数・順序に依存せず、ファイル全体から「銘柄コードから始まる行」
-をヘッダーとして検出し、先頭列が空になるまでをデータ行として読む方式で対応する。
+構造。セクションの数・順序に依存せず、ファイル全体から「ヘッダー行（銘柄コード列
+または米国株のティッカー列から始まる行）」を検出し、先頭列が空になるまでを
+データ行として読む方式で対応する。
+
+日本株セクション（`銘柄コード` 始まり・円建て）と米国株セクション（`ティッカー`
+始まり・USドル建て）の両方に対応する。金額は換算せず、CSVに記載された値の
+まま（日本株は円、米国株はドル）保持する。通貨の解釈は呼び出し側が
+銘柄コードの形式（`utils/market.is_jp_code`）から判定する。
 
 副作用（DB反映）は含まない。パースと集計はテスト容易な純粋関数として分離する。
 """
@@ -14,14 +20,31 @@ import csv
 from dataclasses import dataclass
 
 _CODE_COL = "銘柄コード"
+_US_CODE_COL = "ティッカー"
 _NAME_COL = "銘柄名"
 _QUANTITY_COL = "保有数量［株］"
 _AVG_COST_COL = "平均取得価額［円］"
+_US_AVG_COST_COL = "平均取得価額［USドル］"
 
 # 楽天証券のCSVは通常 Shift-JIS(CP932) だが、UTF-8 で保存され直している
 # 可能性もあるため、決め打ちせず順に試す。"utf-8-sig" はBOMの有無に関わらず
 # 有効なUTF-8をすべて受け付けるため、単体の "utf-8" は別途試す必要がない。
 _ENCODINGS = ("utf-8-sig", "cp932")
+
+
+@dataclass(frozen=True)
+class _ColumnMap:
+    """セクションのヘッダー形式ごとの列名マップ（JP/US で切り替える）。"""
+
+    code_col: str
+    name_col: str
+    qty_col: str
+    cost_col: str
+
+
+_JP_FORMAT = _ColumnMap(_CODE_COL, _NAME_COL, _QUANTITY_COL, _AVG_COST_COL)
+_US_FORMAT = _ColumnMap(_US_CODE_COL, _NAME_COL, _QUANTITY_COL, _US_AVG_COST_COL)
+_FORMATS = (_JP_FORMAT, _US_FORMAT)
 
 
 @dataclass(frozen=True)
@@ -63,16 +86,17 @@ def parse_rakuten_holdings_csv(text: str) -> list[ParsedHolding]:
     i = 0
     while i < len(lines):
         line = lines[i]
-        if not line.startswith(_CODE_COL):
+        fmt = next((f for f in _FORMATS if line.startswith(f.code_col)), None)
+        if fmt is None:
             i += 1
             continue
 
         header = _parse_row(line)
         index = {name: idx for idx, name in enumerate(header)}
-        code_i = index.get(_CODE_COL)
-        name_i = index.get(_NAME_COL)
-        qty_i = index.get(_QUANTITY_COL)
-        cost_i = index.get(_AVG_COST_COL)
+        code_i = index.get(fmt.code_col)
+        name_i = index.get(fmt.name_col)
+        qty_i = index.get(fmt.qty_col)
+        cost_i = index.get(fmt.cost_col)
         i += 1
         if code_i is None or name_i is None or qty_i is None or cost_i is None:
             continue  # 想定外のヘッダー形式はスキップ（このセクションは無視）
@@ -84,7 +108,7 @@ def parse_rakuten_holdings_csv(text: str) -> list[ParsedHolding]:
             row = _parse_row(row_line)
             if len(row) <= code_i or not row[code_i].strip():
                 break  # 「○○口座合計」集計行、またはセクション終端
-            code = row[code_i].strip()
+            code = row[code_i].strip().upper()
             name = row[name_i].strip() if len(row) > name_i else code
             quantity = _parse_number(row[qty_i]) if len(row) > qty_i else None
             avg_cost = _parse_number(row[cost_i]) if len(row) > cost_i else None
