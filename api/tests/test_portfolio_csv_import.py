@@ -65,9 +65,7 @@ def test_parse_rakuten_csv_empty_input_returns_empty() -> None:
 
 def test_parse_rakuten_csv_skips_zero_quantity_rows() -> None:
     # 手動登録（HoldingRequest）の gt=0 制約と揃え、数量/単価が0の行は取り込まない
-    header = (
-        "銘柄コード,銘柄名,保有数量［株］,平均取得価額［円］\n"
-    )
+    header = "銘柄コード,銘柄名,保有数量［株］,平均取得価額［円］\n"
     csv_text = header + '"9999","全株売却済み","0","1,000.00"\n'
     assert parse_rakuten_holdings_csv(csv_text) == []
 
@@ -105,3 +103,123 @@ def test_decode_csv_bytes_utf8_sig_strips_bom() -> None:
 def test_decode_csv_bytes_cp932_fallback() -> None:
     data = "銘柄コード".encode("cp932")
     assert decode_csv_bytes(data) == "銘柄コード"
+
+
+# ---------------------------------------------------------------------------
+# 米国株セクション（ティッカー始まり・USドル建て・参考為替レートで円換算）
+# ---------------------------------------------------------------------------
+
+_US_SAMPLE_CSV = """\
+■時価評価額合計［USドル］,"1,981.25",■前日比合計［USドル］,"-76.67",■評価損益額合計［USドル］,"-61.08",,時間外株価を含まない
+■円換算時価評価額合計,"320,723",■円換算前日比合計,"-12,701",■円換算評価損益額合計,"-6,979",,"参考為替レート(米ドル)","161.88","円/USD","07/14 22:10"
+
+■NISA成長投資枠
+
+ティッカー,銘柄名,取引所,保有数量［株］,執行中数量［株］,(内訳 通常数量[株]),(内訳 積立数量[株]),表示通貨,平均取得価額［USドル］,取得総額［USドル］,現在値［USドル］,前日比［USドル］,時価評価額［USドル］,評価損益［USドル］
+"HOGE","ホゲホゲ","米国市場","7","-","-","-","USドル","214.6200","1,502.34","203.5284","0.00","1,424.69","-77.64"
+"FUGA","フガフガ","米国市場","4","-","-","-","USドル","135.0000","540.00","139.1400","0.00","556.56","16.56"
+"""
+
+
+def test_parse_rakuten_csv_us_section_converts_to_jpy() -> None:
+    holdings = parse_rakuten_holdings_csv(_US_SAMPLE_CSV)
+    assert holdings == [
+        ParsedHolding("HOGE", "ホゲホゲ", 7.0, 214.62 * 161.88),
+        ParsedHolding("FUGA", "フガフガ", 4.0, 135.00 * 161.88),
+    ]
+
+
+def test_parse_rakuten_csv_mixed_jp_us_sections() -> None:
+    # JP・US両セクションを含むファイルを横断的にパースし、両方とも円建てで統一される
+    # （円換算の値そのものは test_parse_rakuten_csv_us_section_converts_to_jpy が検証する）
+    combined = _SAMPLE_CSV + "\n" + _US_SAMPLE_CSV
+    holdings = parse_rakuten_holdings_csv(combined)
+    codes = {h.code for h in holdings}
+    assert codes == {"1111", "2222", "3333", "HOGE", "FUGA"}
+
+
+def test_parse_rakuten_csv_us_section_skipped_without_fx_rate() -> None:
+    # 参考為替レート行が無いと円換算できないため、米国株セクションは取り込まない
+    without_rate = "\n".join(
+        line for line in _US_SAMPLE_CSV.splitlines() if "参考為替レート" not in line
+    )
+    assert parse_rakuten_holdings_csv(without_rate) == []
+
+
+def test_parse_rakuten_csv_us_section_skipped_without_fx_rate_keeps_jp_section() -> (
+    None
+):
+    # US セクションのみスキップされ、同一ファイル内のJPセクションは影響を受けない
+    without_rate = "\n".join(
+        line for line in _US_SAMPLE_CSV.splitlines() if "参考為替レート" not in line
+    )
+    combined = _SAMPLE_CSV + "\n" + without_rate
+    holdings = parse_rakuten_holdings_csv(combined)
+    assert {h.code for h in holdings} == {"1111", "2222", "3333"}
+
+
+def test_parse_rakuten_csv_us_skips_zero_quantity_rows() -> None:
+    # 手動登録と同じ gt=0 制約は米国株セクションにも適用される
+    header = (
+        '■円換算時価評価額合計,"0",,,"参考為替レート(米ドル)","150.00","円/USD","07/14"\n'
+        "\n"
+        "ティッカー,銘柄名,保有数量［株］,平均取得価額［USドル］\n"
+    )
+    csv_text = header + '"ZERO","全株売却済み","0","100.00"\n'
+    assert parse_rakuten_holdings_csv(csv_text) == []
+
+
+def test_parse_rakuten_csv_ignores_fx_label_matching_data_cell() -> None:
+    # サマリー行（"■"始まり）以外に紛れ込んだラベル文字列は為替レートとして
+    # 誤検出しない（列ズレ等でデータセルにラベルと同じ文字列が入っても安全）。
+    poisoned_line = '"9999","参考為替レート(米ドル)","999999","5"\n'
+    holdings = parse_rakuten_holdings_csv(poisoned_line + _US_SAMPLE_CSV)
+    # 汚染された行由来のレートは使われず、正規のサマリー行（161.88）のみ有効
+    assert holdings == [
+        ParsedHolding("HOGE", "ホゲホゲ", 7.0, 214.62 * 161.88),
+        ParsedHolding("FUGA", "フガフガ", 4.0, 135.00 * 161.88),
+    ]
+
+
+def test_parse_rakuten_csv_us_section_skipped_when_rate_is_zero() -> None:
+    # レート抽出はできるが値が0（不正なサマリー行等）の場合も換算不能として扱う
+    header = (
+        '■円換算時価評価額合計,"0",,,"参考為替レート(米ドル)","0.00","円/USD","07/14"\n'
+        "\n"
+        "ティッカー,銘柄名,保有数量［株］,平均取得価額［USドル］\n"
+    )
+    csv_text = header + '"HOGE","ホゲホゲ","7","214.62"\n'
+    assert parse_rakuten_holdings_csv(csv_text) == []
+
+
+def test_parse_rakuten_csv_us_ticker_code_normalized_to_uppercase() -> None:
+    # 手動登録（HoldingsRepository）と同じ正規化をパース時点で行い、
+    # 大文字小文字違いのティッカーがmerge_duplicate_codesで正しく統合されるようにする。
+    header = (
+        '■円換算時価評価額合計,"0",,,"参考為替レート(米ドル)","150.00","円/USD","07/14"\n'
+        "\n"
+        "ティッカー,銘柄名,保有数量［株］,平均取得価額［USドル］\n"
+    )
+    csv_text = header + '"hoge","ホゲホゲ","7","100.00"\n'
+    holdings = parse_rakuten_holdings_csv(csv_text)
+    assert holdings == [ParsedHolding("HOGE", "ホゲホゲ", 7.0, 100.00 * 150.00)]
+
+
+def test_merge_duplicate_codes_case_insensitive_after_parse() -> None:
+    # 複数セクションに大文字小文字違いで同一ティッカーが出現しても、
+    # parse_rakuten_holdings_csv側で正規化済みのため正しく統合される。
+    header = (
+        '■円換算時価評価額合計,"0",,,"参考為替レート(米ドル)","150.00","円/USD","07/14"\n'
+        "\n"
+        "ティッカー,銘柄名,保有数量［株］,平均取得価額［USドル］\n"
+    )
+    section_a = header + '"hoge","ホゲホゲ","5","100.00"\n'
+    section_b = header + '"HOGE","ホゲホゲ","5","200.00"\n'
+    holdings = merge_duplicate_codes(
+        parse_rakuten_holdings_csv(section_a + "\n" + section_b)
+    )
+    assert len(holdings) == 1
+    assert holdings[0].code == "HOGE"
+    assert holdings[0].quantity == 10.0
+    expected_avg = (5 * 100.00 * 150.00 + 5 * 200.00 * 150.00) / 10.0
+    assert holdings[0].avg_cost == expected_avg
