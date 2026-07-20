@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp, Star } from 'lucide-react'
+import { Fragment, type ReactNode } from 'react'
 import type { StockRow } from '../../types/api'
 import {
   fmtMarketCapByCode,
@@ -41,8 +42,12 @@ interface Props {
   // 銘柄選択（AI企業分析）はスクリーニング画面のみで使う任意機能
   selected?: Set<string>
   onToggleSelect?: (code: string) => void
-  // 行クリックで詳細を開く（ウォッチリスト画面のみで使用）
+  // 行クリックで詳細を開閉する（ウォッチリスト画面のみで使用）
   onRowClick?: (code: string) => void
+  // 詳細（チャート）を開いている銘柄コードの集合。指定した銘柄の行の直下に
+  // renderDetail の内容を挿入する（複数銘柄を同時に開ける）。
+  openCodes?: Set<string>
+  renderDetail?: (code: string) => ReactNode
 }
 
 function scoreColor(score: number): string {
@@ -62,8 +67,13 @@ export function StockTable({
   selected,
   onToggleSelect,
   onRowClick,
+  openCodes,
+  renderDetail,
 }: Props) {
   const showSelectCol = onToggleSelect != null
+  // 詳細行の colSpan は実際のヘッダー列数と一致させる必要がある:
+  // (選択列は任意) + ウォッチ列(常に1) + COLUMNS。列構成を変えたらここも見直すこと。
+  const colSpan = (showSelectCol ? 1 : 0) + 1 + COLUMNS.length
 
   return (
     <div className="table-wrap">
@@ -101,9 +111,10 @@ export function StockTable({
             const up = (s.change_pct ?? 0) >= 0
             const isSelected = selected?.has(s.code) ?? false
             const isWatched = watchedCodes.has(s.code)
+            const isOpen = openCodes?.has(s.code) ?? false
             return (
+              <Fragment key={s.code}>
               <tr
-                key={s.code}
                 className={`${isSelected ? 'row--selected' : ''} ${
                   onRowClick ? 'row--clickable' : ''
                 }`}
@@ -170,6 +181,14 @@ export function StockTable({
                   </div>
                 </td>
               </tr>
+              {isOpen && renderDetail ? (
+                <tr className="detail-row">
+                  <td colSpan={colSpan} onClick={(e) => e.stopPropagation()}>
+                    {renderDetail(s.code)}
+                  </td>
+                </tr>
+              ) : null}
+              </Fragment>
             )
           })}
         </tbody>

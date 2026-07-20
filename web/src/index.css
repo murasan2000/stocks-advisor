@@ -719,6 +719,22 @@ input {
   background: var(--surface);
 }
 
+/* 銘柄行の直下にチャートを挿入する行（複数銘柄を同時に展開できる） */
+.stock-table tbody tr.detail-row {
+  cursor: default;
+}
+.stock-table tbody tr.detail-row:hover {
+  background: transparent;
+}
+.stock-table tbody tr.detail-row td {
+  padding: 12px;
+  background: var(--bg-elevated);
+  white-space: normal;
+}
+.stock-table tbody tr.detail-row .stock-detail {
+  margin-top: 0;
+}
+
 .stock-table td.code {
   color: var(--accent-3);
   font-weight: 600;

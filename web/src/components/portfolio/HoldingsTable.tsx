@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp, Star, Trash2 } from 'lucide-react'
+import { Fragment, type ReactNode } from 'react'
 import type { Holding } from '../../types/api'
 import { fmtNum, fmtPct, fmtPriceByCode } from '../../utils/format'
 
@@ -33,6 +34,10 @@ interface Props {
   selected?: Set<string>
   onToggleSelect?: (code: string) => void
   onRowClick?: (code: string) => void
+  // 詳細（チャート）を開いている銘柄コードの集合。指定した銘柄の行の直下に
+  // renderDetail の内容を挿入する（複数銘柄を同時に開ける）。
+  openCodes?: Set<string>
+  renderDetail?: (code: string) => ReactNode
 }
 
 export function HoldingsTable({
@@ -46,8 +51,14 @@ export function HoldingsTable({
   selected,
   onToggleSelect,
   onRowClick,
+  openCodes,
+  renderDetail,
 }: Props) {
   const showSelectCol = onToggleSelect != null
+  // 詳細行の colSpan は実際のヘッダー列数と一致させる必要がある:
+  // (選択列は任意) + ウォッチ列(常に1) + COLUMNS + 削除ボタン列(常に1)。
+  // 列構成を変えたらここも見直すこと。
+  const colSpan = (showSelectCol ? 1 : 0) + 1 + COLUMNS.length + 1
 
   return (
     <div className="table-wrap">
@@ -86,9 +97,10 @@ export function HoldingsTable({
             const up = (h.pnl ?? 0) >= 0
             const isSelected = selected?.has(h.code) ?? false
             const isWatched = watchedCodes.has(h.code)
+            const isOpen = openCodes?.has(h.code) ?? false
             return (
+              <Fragment key={h.code}>
               <tr
-                key={h.code}
                 className={`${isSelected ? 'row--selected' : ''} ${
                   onRowClick ? 'row--clickable' : ''
                 }`}
@@ -146,6 +158,14 @@ export function HoldingsTable({
                   </button>
                 </td>
               </tr>
+              {isOpen && renderDetail ? (
+                <tr className="detail-row">
+                  <td colSpan={colSpan} onClick={(e) => e.stopPropagation()}>
+                    {renderDetail(h.code)}
+                  </td>
+                </tr>
+              ) : null}
+              </Fragment>
             )
           })}
         </tbody>
