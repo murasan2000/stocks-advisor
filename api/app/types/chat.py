@@ -26,6 +26,9 @@ class Message(BaseModel):
 
 class SendMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
+    # 銘柄選択→AI分析のように対象銘柄が既知の場合に明示指定する（任意）。
+    # 指定時はエージェント側のテキストからの銘柄抽出（日本株コード限定）をスキップする。
+    tickers: list[str] = Field(default_factory=list)
 
 
 class SendMessageResponse(BaseModel):

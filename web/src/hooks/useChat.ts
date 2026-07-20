@@ -92,7 +92,7 @@ export function useChat() {
 
   const sendText = useCallback(async (
     rawText: string,
-    opts?: { newConversation?: boolean },
+    opts?: { newConversation?: boolean; tickers?: string[] },
   ) => {
     const text = rawText.trim()
     if (!text || busyRef.current) return
@@ -120,7 +120,7 @@ export function useChat() {
       }
       // 送信するとエージェントジョブが作られる。完了までポーリングし、
       // 進捗フェーズ（意図判定/委任/レポート生成…）を生成中バブルに表示する。
-      const { job_id } = await postMessage(convId, text)
+      const { job_id } = await postMessage(convId, text, opts?.tickers)
       const startedAt = Date.now()
       for (;;) {
         await sleep(POLL_MS)
@@ -181,8 +181,11 @@ export function useChat() {
       if (codes.length === 0) return
       setView('chat')
       open()
+      // tickers を明示的に渡すことで、テキストからの銘柄抽出（日本株コード限定の
+      // 正規表現）に依存せず、米国株ティッカーも確実に対象として認識させる。
       await sendText(`${codes.join(' ')} を分析してください`, {
         newConversation: true,
+        tickers: codes,
       })
     },
     [open, sendText],

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from app.services.agents import general, runtime
+from app.services.agents import company_us, general, runtime
 from app.services.chat.repository import ChatRepository, make_title
 from app.services.chat.service import accept_message, run_chat_agent_job
 from app.services.jobs.repository import JobRepository
@@ -140,3 +140,44 @@ async def test_run_chat_agent_job_persists_assistant(
     messages = await repo.list_messages(conv.conversation_id)
     assert [m.role for m in messages] == ["user", "assistant"]
     assert messages[-1].content == "[LLM] PERとは何ですか"
+
+
+async def test_run_chat_agent_job_uses_explicit_tickers_for_us_routing(
+    repo: ChatRepository,
+    job_repo: JobRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 銘柄選択→AI分析（analyzeTickers）相当: tickers を明示指定して送る。
+    # テキストだけでは日本株コード限定の抽出ロジックが米国株ティッカーを
+    # 拾えないため、tickers を明示的に渡すことでcompany_usへ確実にルーティング
+    # されることを確認する。
+    async def _fake_intent(
+        system: str, user: str, *, fallback: str, config: Any = None
+    ) -> str:
+        return fallback
+
+    async def _no_search(query: str, **kwargs: Any) -> list[Any]:
+        return []
+
+    monkeypatch.setattr(runtime, "invoke_llm", _fake_intent)
+    monkeypatch.setattr(company_us, "invoke_llm", _fake_intent)
+    monkeypatch.setattr(company_us, "search_web", _no_search)
+
+    conv = await repo.create_conversation()
+    accepted = await accept_message(
+        repo, job_repo, conv.conversation_id, "AAPL を分析してください"
+    )
+    assert accepted is not None
+
+    await run_chat_agent_job(
+        accepted.job_id,
+        job_repo,
+        repo,
+        conv.conversation_id,
+        "AAPL を分析してください",
+        ["AAPL"],
+    )
+
+    job = await job_repo.get(accepted.job_id)
+    assert job is not None and job.status == JobStatus.DONE
+    assert "（AAPL）企業分析レポート" in (job.result or "")

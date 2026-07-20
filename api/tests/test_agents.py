@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from app.services.agents import company, general, orchestrator, runtime
+from app.services.agents import company, company_us, general, orchestrator, runtime
 from app.services.agents.resolver import resolve_tickers
 from app.services.agents.runner import run_agent_job
 from app.services.agents.runtime import (
@@ -45,6 +45,8 @@ def fast_intent(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(general, "search_web", _no_search)
     monkeypatch.setattr(company, "search_web", _no_search)
     monkeypatch.setattr(company, "invoke_llm", _fake_intent_llm)
+    monkeypatch.setattr(company_us, "search_web", _no_search)
+    monkeypatch.setattr(company_us, "invoke_llm", _fake_intent_llm)
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +152,22 @@ async def test_company_agent_requires_ticker(fast_intent: None) -> None:
     assert "銘柄コード" in answer
 
 
+async def test_company_us_agent_reports_per_ticker(fast_intent: None) -> None:
+    answer = await company_us.run("分析して", tickers=["AAPL", "MSFT"])
+    assert "（AAPL）企業分析レポート" in answer
+    assert "（MSFT）企業分析レポート" in answer
+    for section in ("## サマリー", "## 財務分析", "## AI評価", "## 総評"):
+        assert section in answer
+    assert "投資判断はご自身の責任で" in answer  # 免責
+    # EDINET相当のデータソースは持たないため開示セクションは出ない
+    assert "開示" not in answer
+
+
+async def test_company_us_agent_requires_ticker(fast_intent: None) -> None:
+    answer = await company_us.run("分析して", tickers=[])
+    assert "米国株ティッカー" in answer
+
+
 # ---------------------------------------------------------------------------
 # 親オーケストレーター（意図判定 → 委任）
 # ---------------------------------------------------------------------------
@@ -172,6 +190,19 @@ async def test_orchestrator_routes_to_general(
     monkeypatch.setattr(general, "invoke_llm", _fake_llm)
     answer = await orchestrator.run("PERとは何ですか")
     assert answer == "[LLM] PERとは何ですか"
+
+
+async def test_orchestrator_routes_us_ticker_to_company_us(fast_intent: None) -> None:
+    # 明示指定のticker（チェックボックス選択→分析のフロー相当）でUS判定される
+    answer = await orchestrator.run("分析して", tickers=["AAPL"])
+    assert "（AAPL）企業分析レポート" in answer
+
+
+async def test_orchestrator_routes_mixed_jp_us_tickers(fast_intent: None) -> None:
+    # JP/US混在の選択でも両方のレポートが1つの回答にまとまる
+    answer = await orchestrator.run("分析して", tickers=["7203", "AAPL"])
+    assert "トヨタ自動車（7203）企業分析レポート" in answer
+    assert "（AAPL）企業分析レポート" in answer
 
 
 # ---------------------------------------------------------------------------
