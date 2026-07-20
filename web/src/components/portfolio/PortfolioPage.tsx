@@ -1,6 +1,9 @@
 import { Plus, Upload } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import type { Holding, StockRow } from '../../types/api'
+import { MarketSection } from '../common/MarketSection'
+import { isJpCode } from '../../utils/format'
+import { useSortState } from '../../hooks/useSortState'
 import { StockDetail } from '../watchlist/StockDetail'
 import { HoldingsTable } from './HoldingsTable'
 import { PortfolioSummary } from './PortfolioSummary'
@@ -47,8 +50,6 @@ export function PortfolioPage({
   onToggleSelect,
   stocks,
 }: Props) {
-  const [sortBy, setSortBy] = useState<SortableKey>('market_value')
-  const [sortDesc, setSortDesc] = useState(true)
   const [detailCode, setDetailCode] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [addCode, setAddCode] = useState('')
@@ -60,10 +61,12 @@ export function PortfolioPage({
   const [importMessage, setImportMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const sortedHoldings = useMemo(() => {
-    const sorted = [...holdings].sort((a, b) => compare(a, b, sortBy))
-    return sortDesc ? sorted.reverse() : sorted
-  }, [holdings, sortBy, sortDesc])
+  // 円建て（日本株）とドル建て（米国株）で通貨が異なるため、表示テーブル・合計・
+  // ソート状態をそれぞれ独立させる（片方の並べ替えがもう片方に影響しないように）。
+  const jpHoldingsRaw = useMemo(() => holdings.filter((h) => isJpCode(h.code)), [holdings])
+  const usHoldingsRaw = useMemo(() => holdings.filter((h) => !isJpCode(h.code)), [holdings])
+  const jp = useSortState(jpHoldingsRaw, compare, 'market_value', true)
+  const us = useSortState(usHoldingsRaw, compare, 'market_value', true)
 
   const detailHolding = useMemo(
     () => holdings.find((h) => h.code === detailCode),
@@ -97,13 +100,10 @@ export function PortfolioPage({
     }
   }, [stocks, detailCode, detailHolding])
 
-  const handleSort = (key: string) => {
-    if (key === sortBy) {
-      setSortDesc((d) => !d)
-    } else {
-      setSortBy(key as SortableKey)
-      setSortDesc(true)
-    }
+  const handleRemove = (code: string) => {
+    void onRemove(code)
+    // 詳細パネルを開いたまま削除した場合、存在しない銘柄のパネルが残らないよう閉じる
+    if (code === detailCode) setDetailCode(null)
   }
 
   const handleAddSubmit = async (e: React.FormEvent) => {
@@ -154,8 +154,6 @@ export function PortfolioPage({
         <p>実際に保有している銘柄の含み損益・資産配分を確認できます。</p>
       </header>
 
-      <PortfolioSummary holdings={holdings} />
-
       {error ? <div className="error-banner">{error}</div> : null}
 
       <div className="page-actions">
@@ -193,7 +191,7 @@ export function PortfolioPage({
         <form className="inline-add-form" onSubmit={(e) => void handleAddSubmit(e)}>
           <input
             type="text"
-            placeholder="銘柄コード（例: 7203）"
+            placeholder="銘柄コード（例: 7203）またはティッカー（例: AAPL）"
             value={addCode}
             onChange={(e) => setAddCode(e.target.value)}
           />
@@ -205,7 +203,7 @@ export function PortfolioPage({
           />
           <input
             type="number"
-            placeholder="平均取得単価"
+            placeholder="平均取得単価（日本株は円、米国株はドル）"
             value={addAvgCost}
             onChange={(e) => setAddAvgCost(e.target.value)}
           />
@@ -222,23 +220,45 @@ export function PortfolioPage({
         </div>
       ) : null}
 
-      <HoldingsTable
-        holdings={sortedHoldings}
-        loading={loading}
-        sortBy={sortBy}
-        sortDesc={sortDesc}
-        onSort={handleSort}
-        onRemove={(code) => {
-          void onRemove(code)
-          // 詳細パネルを開いたまま削除した場合、存在しない銘柄のパネルが残らないよう閉じる
-          if (code === detailCode) setDetailCode(null)
-        }}
-        watchedCodes={watchedCodes}
-        onToggleWatch={onToggleWatch}
-        selected={selected}
-        onToggleSelect={onToggleSelect}
-        onRowClick={setDetailCode}
-      />
+      {!loading && holdings.length === 0 ? (
+        <div className="table-empty">保有銘柄が登録されていません</div>
+      ) : (
+        <>
+          {/* 円建て/ドル建てを合算した単一の総資産額は表示しない（為替レートが
+              必要になり、CSVインポートの通貨モデルをドル建てのまま保つ方針
+              [issue #62] と矛盾するため）。合計は通貨ごとに独立して表示する。 */}
+          <MarketSection label="日本株" count={jp.sorted.length}>
+            <PortfolioSummary holdings={jp.sorted} currency="JPY" />
+            <HoldingsTable
+              holdings={jp.sorted}
+              sortBy={jp.sortBy}
+              sortDesc={jp.sortDesc}
+              onSort={jp.handleSort}
+              onRemove={handleRemove}
+              watchedCodes={watchedCodes}
+              onToggleWatch={onToggleWatch}
+              selected={selected}
+              onToggleSelect={onToggleSelect}
+              onRowClick={setDetailCode}
+            />
+          </MarketSection>
+          <MarketSection label="米国株" count={us.sorted.length}>
+            <PortfolioSummary holdings={us.sorted} currency="USD" />
+            <HoldingsTable
+              holdings={us.sorted}
+              sortBy={us.sortBy}
+              sortDesc={us.sortDesc}
+              onSort={us.handleSort}
+              onRemove={handleRemove}
+              watchedCodes={watchedCodes}
+              onToggleWatch={onToggleWatch}
+              selected={selected}
+              onToggleSelect={onToggleSelect}
+              onRowClick={setDetailCode}
+            />
+          </MarketSection>
+        </>
+      )}
 
       {detailCode ? (
         <StockDetail

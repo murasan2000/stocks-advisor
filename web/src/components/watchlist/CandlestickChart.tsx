@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { Candle } from '../../types/api'
-import { fmtPrice } from '../../utils/format'
+import { fmtPriceByCode } from '../../utils/format'
 import { movingAverage } from '../../utils/technicals'
 
 interface ChartRow extends Candle {
@@ -85,11 +85,12 @@ function ChartTooltip({
 
 interface Props {
   candles: Candle[]
+  code: string
   // 保有銘柄の取得単価（ポートフォリオ画面から渡された場合のみラインを表示）
   avgCost?: number | null
 }
 
-export function CandlestickChart({ candles, avgCost }: Props) {
+export function CandlestickChart({ candles, code, avgCost }: Props) {
   const ma5 = movingAverage(candles, 5)
   const ma25 = movingAverage(candles, 25)
   const ma75 = movingAverage(candles, 75)
@@ -132,7 +133,7 @@ export function CandlestickChart({ candles, avgCost }: Props) {
               stroke="var(--warning)"
               strokeDasharray="4 4"
               label={{
-                value: `取得単価 ${fmtPrice(avgCost)}`,
+                value: `取得単価 ${fmtPriceByCode(code, avgCost)}`,
                 position: 'insideTopLeft',
                 fill: 'var(--warning)',
                 fontSize: 11,

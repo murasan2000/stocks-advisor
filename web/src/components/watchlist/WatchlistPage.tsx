@@ -1,8 +1,11 @@
 import { Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { MarketSection } from '../common/MarketSection'
 import { StockTable } from '../screener/StockTable'
 import { StockDetail } from './StockDetail'
 import type { StockRow } from '../../types/api'
+import { isJpCode } from '../../utils/format'
+import { useSortState } from '../../hooks/useSortState'
 
 interface Props {
   rows: StockRow[]
@@ -41,27 +44,18 @@ export function WatchlistPage({
   onToggleSelect,
   onAdd,
 }: Props) {
-  const [sortBy, setSortBy] = useState<SortableKey>('code')
-  const [sortDesc, setSortDesc] = useState(false)
   const [detailCode, setDetailCode] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [addCode, setAddCode] = useState('')
   const [addBusy, setAddBusy] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
 
-  const sortedRows = useMemo(() => {
-    const sorted = [...rows].sort((a, b) => compare(a, b, sortBy))
-    return sortDesc ? sorted.reverse() : sorted
-  }, [rows, sortBy, sortDesc])
-
-  const handleSort = (key: string) => {
-    if (key === sortBy) {
-      setSortDesc((d) => !d)
-    } else {
-      setSortBy(key as SortableKey)
-      setSortDesc(true)
-    }
-  }
+  // 円建て（日本株）とドル建て（米国株）で通貨が異なるため、表示テーブル・ソート
+  // 状態をそれぞれ独立させる（片方の並べ替えがもう片方に影響しないように）。
+  const jpRowsRaw = useMemo(() => rows.filter((r) => isJpCode(r.code)), [rows])
+  const usRowsRaw = useMemo(() => rows.filter((r) => !isJpCode(r.code)), [rows])
+  const jp = useSortState(jpRowsRaw, compare, 'code', false)
+  const us = useSortState(usRowsRaw, compare, 'code', false)
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -132,18 +126,36 @@ export function WatchlistPage({
           （米国株は上のフォームからティッカーを直接入力してください）。
         </div>
       ) : (
-        <StockTable
-          stocks={sortedRows}
-          sortBy={sortBy}
-          sortDesc={sortDesc}
-          onSort={handleSort}
-          loading={loading}
-          watchedCodes={watchedCodes}
-          onToggleWatch={onToggleWatch}
-          onRowClick={setDetailCode}
-          selected={selected}
-          onToggleSelect={onToggleSelect}
-        />
+        <>
+          <MarketSection label="日本株" count={jp.sorted.length}>
+            <StockTable
+              stocks={jp.sorted}
+              sortBy={jp.sortBy}
+              sortDesc={jp.sortDesc}
+              onSort={jp.handleSort}
+              loading={loading}
+              watchedCodes={watchedCodes}
+              onToggleWatch={onToggleWatch}
+              onRowClick={setDetailCode}
+              selected={selected}
+              onToggleSelect={onToggleSelect}
+            />
+          </MarketSection>
+          <MarketSection label="米国株" count={us.sorted.length}>
+            <StockTable
+              stocks={us.sorted}
+              sortBy={us.sortBy}
+              sortDesc={us.sortDesc}
+              onSort={us.handleSort}
+              loading={loading}
+              watchedCodes={watchedCodes}
+              onToggleWatch={onToggleWatch}
+              onRowClick={setDetailCode}
+              selected={selected}
+              onToggleSelect={onToggleSelect}
+            />
+          </MarketSection>
+        </>
       )}
 
       {detailCode ? (

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from app.services.screener import us_quote
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
-from app.services.watchlist import service as watchlist_service
 from app.services.watchlist.repository import WatchlistRepository
 from app.services.watchlist.service import WatchlistService
 from app.types.api import StockRow
@@ -101,7 +101,7 @@ async def test_list_rows_fetches_us_quote_when_live(
     watchlist: tuple[WatchlistService, ScreenerService],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    watchlist_service._fetch_us_quote_live.cache_clear()  # TTLキャッシュを分離
+    us_quote._fetch_us_quote_live.cache_clear()  # TTLキャッシュを分離
     wl, _ = watchlist
     monkeypatch.setattr(settings, "external_api_mode", "live")
 
@@ -110,7 +110,7 @@ async def test_list_rows_fetches_us_quote_when_live(
             code=code, symbol=code, name="Apple Inc.", market="NMS", price=200.0
         )
 
-    monkeypatch.setattr(watchlist_service, "fetch_live_quote", fake_fetch_live_quote)
+    monkeypatch.setattr(us_quote, "fetch_live_quote", fake_fetch_live_quote)
 
     await wl.add("AAPL")
     rows = await wl.list_rows()
@@ -124,14 +124,14 @@ async def test_list_rows_us_quote_falls_back_on_failure(
     watchlist: tuple[WatchlistService, ScreenerService],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    watchlist_service._fetch_us_quote_live.cache_clear()
+    us_quote._fetch_us_quote_live.cache_clear()
     wl, _ = watchlist
     monkeypatch.setattr(settings, "external_api_mode", "live")
 
     def raising_fetch_live_quote(code: str) -> StockRow:
         raise RuntimeError("network error")
 
-    monkeypatch.setattr(watchlist_service, "fetch_live_quote", raising_fetch_live_quote)
+    monkeypatch.setattr(us_quote, "fetch_live_quote", raising_fetch_live_quote)
 
     await wl.add("MSFT")
     rows = await wl.list_rows()
@@ -144,7 +144,7 @@ async def test_list_rows_us_quote_failure_is_not_cached(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # 失敗はキャッシュされないため、次回呼び出しで再取得され成功できる
-    watchlist_service._fetch_us_quote_live.cache_clear()
+    us_quote._fetch_us_quote_live.cache_clear()
     wl, _ = watchlist
     monkeypatch.setattr(settings, "external_api_mode", "live")
     attempt = 0
@@ -158,7 +158,7 @@ async def test_list_rows_us_quote_failure_is_not_cached(
             code=code, symbol=code, name="Apple Inc.", market="", price=201.0
         )
 
-    monkeypatch.setattr(watchlist_service, "fetch_live_quote", flaky_fetch_live_quote)
+    monkeypatch.setattr(us_quote, "fetch_live_quote", flaky_fetch_live_quote)
 
     await wl.add("AAPL")
     first = await wl.list_rows()
@@ -172,7 +172,7 @@ async def test_list_rows_jp_code_missing_from_snapshot_skips_us_fetch(
     watchlist: tuple[WatchlistService, ScreenerService],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    watchlist_service._fetch_us_quote_live.cache_clear()
+    us_quote._fetch_us_quote_live.cache_clear()
     wl, _ = watchlist
     monkeypatch.setattr(settings, "external_api_mode", "live")
 
@@ -183,7 +183,7 @@ async def test_list_rows_jp_code_missing_from_snapshot_skips_us_fetch(
         called = True
         return None
 
-    monkeypatch.setattr(watchlist_service, "fetch_live_quote", fail_if_called)
+    monkeypatch.setattr(us_quote, "fetch_live_quote", fail_if_called)
 
     await wl.add("0000")  # JPコード形式・スナップショット無し（上場廃止等）
     rows = await wl.list_rows()
