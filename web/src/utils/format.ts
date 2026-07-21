@@ -13,11 +13,14 @@ export function fmtPrice(n: number | null): string {
   return `¥${n.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}`
 }
 
+export function fmtPriceUsd(n: number | null): string {
+  if (n === null) return '—'
+  return `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+}
+
 /** 銘柄コードに応じて円/ドル表示を切り替える価格フォーマット。 */
 export function fmtPriceByCode(code: string, n: number | null): string {
-  if (n === null) return '—'
-  if (isJpCode(code)) return fmtPrice(n)
-  return `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+  return isJpCode(code) ? fmtPrice(n) : fmtPriceUsd(n)
 }
 
 export function fmtPct(n: number | null): string {

@@ -11,7 +11,6 @@ import {
   fmtMarketCapByCode,
   fmtNum,
   fmtPct,
-  fmtPrice,
   fmtPriceByCode,
   fmtVolume,
 } from '../../utils/format'
@@ -105,7 +104,7 @@ export function StockDetail({ code, row, onClose, holding }: Props) {
       ) : null}
       {error ? <div className="error-banner">{error}</div> : null}
       {!loading && !error && candles.length > 0 ? (
-        <CandlestickChart candles={candles} avgCost={holding?.avgCost} />
+        <CandlestickChart candles={candles} code={code} avgCost={holding?.avgCost} />
       ) : null}
       {!loading && !error && candles.length === 0 ? (
         <div className="table-empty">チャートデータを取得できませんでした</div>
@@ -113,9 +112,6 @@ export function StockDetail({ code, row, onClose, holding }: Props) {
 
       <div className="stock-detail-stats">
         {holding ? (
-          // 保有銘柄の統計は常に円建て（fmtPrice固定）。取得単価・評価額は
-          // 円換算済みの値として保存する方針のため、他の統計と異なり
-          // fmtPriceByCode（銘柄コードに応じた$/¥切替）は使わない。
           <>
             <div className="detail-stat">
               <span className="detail-stat-label">保有数量</span>
@@ -123,15 +119,21 @@ export function StockDetail({ code, row, onClose, holding }: Props) {
             </div>
             <div className="detail-stat">
               <span className="detail-stat-label">取得単価</span>
-              <span className="detail-stat-value">{fmtPrice(holding.avgCost)}</span>
+              <span className="detail-stat-value">
+                {fmtPriceByCode(code, holding.avgCost)}
+              </span>
             </div>
             <div className="detail-stat">
               <span className="detail-stat-label">評価額</span>
-              <span className="detail-stat-value strong">{fmtPrice(holding.marketValue)}</span>
+              <span className="detail-stat-value strong">
+                {fmtPriceByCode(code, holding.marketValue)}
+              </span>
             </div>
             <div className="detail-stat">
               <span className="detail-stat-label">評価損益</span>
-              <span className={`detail-stat-value ${pnlClass}`}>{fmtPrice(holding.pnl)}</span>
+              <span className={`detail-stat-value ${pnlClass}`}>
+                {fmtPriceByCode(code, holding.pnl)}
+              </span>
             </div>
             <div className="detail-stat">
               <span className="detail-stat-label">評価損益率</span>

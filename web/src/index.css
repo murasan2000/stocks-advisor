@@ -719,6 +719,22 @@ input {
   background: var(--surface);
 }
 
+/* 銘柄行の直下にチャートを挿入する行（複数銘柄を同時に展開できる） */
+.stock-table tbody tr.detail-row {
+  cursor: default;
+}
+.stock-table tbody tr.detail-row:hover {
+  background: transparent;
+}
+.stock-table tbody tr.detail-row td {
+  padding: 12px;
+  background: var(--bg-elevated);
+  white-space: normal;
+}
+.stock-table tbody tr.detail-row .stock-detail {
+  margin-top: 0;
+}
+
 .stock-table td.code {
   color: var(--accent-3);
   font-weight: 600;
@@ -783,6 +799,35 @@ input {
   text-align: center;
   color: var(--text-dim);
   font-size: 13px;
+}
+
+/* 日本株/米国株の表示分割セクション（通貨が異なるため混在表示しない） */
+.market-section {
+  margin-top: 20px;
+}
+.market-section + .market-section {
+  margin-top: 32px;
+}
+.market-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.market-section-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.market-section .stat-section {
+  margin-top: 0;
+  margin-bottom: 14px;
 }
 
 /* 銘柄選択（企業分析対象） */

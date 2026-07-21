@@ -1,6 +1,10 @@
 import { Plus, Upload } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Holding, StockRow } from '../../types/api'
+import { MarketSection } from '../common/MarketSection'
+import { isJpCode } from '../../utils/format'
+import { useSortState } from '../../hooks/useSortState'
+import { useToggleSet } from '../../hooks/useToggleSet'
 import { StockDetail } from '../watchlist/StockDetail'
 import { HoldingsTable } from './HoldingsTable'
 import { PortfolioSummary } from './PortfolioSummary'
@@ -47,9 +51,15 @@ export function PortfolioPage({
   onToggleSelect,
   stocks,
 }: Props) {
-  const [sortBy, setSortBy] = useState<SortableKey>('market_value')
-  const [sortDesc, setSortDesc] = useState(true)
-  const [detailCode, setDetailCode] = useState<string | null>(null)
+  // 開いているチャートの銘柄コード集合（複数銘柄を同時に展開できる。
+  // 行を再クリックすると畳む＝トグル。閉じるボタンは remove を使う）。
+  const openDetails = useToggleSet()
+  const { prune: pruneOpenDetails } = openDetails
+  // 保有銘柄削除・CSV再インポート等で一覧から消えた銘柄は開閉状態も掃除する
+  // （再登録時に開いたまま復活しないように）。
+  useEffect(() => {
+    pruneOpenDetails(holdings.map((h) => h.code))
+  }, [holdings, pruneOpenDetails])
   const [showAddForm, setShowAddForm] = useState(false)
   const [addCode, setAddCode] = useState('')
   const [addQuantity, setAddQuantity] = useState('')
@@ -60,27 +70,25 @@ export function PortfolioPage({
   const [importMessage, setImportMessage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const sortedHoldings = useMemo(() => {
-    const sorted = [...holdings].sort((a, b) => compare(a, b, sortBy))
-    return sortDesc ? sorted.reverse() : sorted
-  }, [holdings, sortBy, sortDesc])
+  // 円建て（日本株）とドル建て（米国株）で通貨が異なるため、表示テーブル・合計・
+  // ソート状態をそれぞれ独立させる（片方の並べ替えがもう片方に影響しないように）。
+  const jpHoldingsRaw = useMemo(() => holdings.filter((h) => isJpCode(h.code)), [holdings])
+  const usHoldingsRaw = useMemo(() => holdings.filter((h) => !isJpCode(h.code)), [holdings])
+  const jp = useSortState(jpHoldingsRaw, compare, 'market_value', true)
+  const us = useSortState(usHoldingsRaw, compare, 'market_value', true)
 
-  const detailHolding = useMemo(
-    () => holdings.find((h) => h.code === detailCode),
-    [holdings, detailCode],
-  )
   // stocks はスクリーナーの検索/絞り込み状態に依存するため、保有銘柄がその条件から
   // 外れていても表示できるよう、見つからない場合は Holding 自身の情報で最低限を補う。
-  const detailRow: StockRow | undefined = useMemo(() => {
-    const fromScreener = stocks.find((r) => r.code === detailCode)
+  const buildDetailRow = (code: string, holding: Holding | undefined): StockRow | undefined => {
+    const fromScreener = stocks.find((r) => r.code === code)
     if (fromScreener) return fromScreener
-    if (!detailHolding) return undefined
+    if (!holding) return undefined
     return {
-      code: detailHolding.code,
-      symbol: detailHolding.symbol,
-      name: detailHolding.name,
-      market: detailHolding.market,
-      price: detailHolding.price,
+      code: holding.code,
+      symbol: holding.symbol,
+      name: holding.name,
+      market: holding.market,
+      price: holding.price,
       change_pct: null,
       volume: null,
       market_cap: null,
@@ -95,15 +103,35 @@ export function PortfolioPage({
       rebound_from_low_pct: null,
       score: 0,
     }
-  }, [stocks, detailCode, detailHolding])
+  }
 
-  const handleSort = (key: string) => {
-    if (key === sortBy) {
-      setSortDesc((d) => !d)
-    } else {
-      setSortBy(key as SortableKey)
-      setSortDesc(true)
-    }
+  const renderDetail = (code: string) => {
+    const holding = holdings.find((h) => h.code === code)
+    return (
+      <StockDetail
+        key={code}
+        code={code}
+        row={buildDetailRow(code, holding)}
+        onClose={() => openDetails.remove(code)}
+        holding={
+          holding
+            ? {
+                quantity: holding.quantity,
+                avgCost: holding.avg_cost,
+                marketValue: holding.market_value,
+                pnl: holding.pnl,
+                pnlPct: holding.pnl_pct,
+              }
+            : undefined
+        }
+      />
+    )
+  }
+
+  const handleRemove = (code: string) => {
+    void onRemove(code)
+    // 詳細パネルを開いたまま削除した場合、存在しない銘柄のパネルが残らないよう閉じる
+    openDetails.remove(code)
   }
 
   const handleAddSubmit = async (e: React.FormEvent) => {
@@ -154,8 +182,6 @@ export function PortfolioPage({
         <p>実際に保有している銘柄の含み損益・資産配分を確認できます。</p>
       </header>
 
-      <PortfolioSummary holdings={holdings} />
-
       {error ? <div className="error-banner">{error}</div> : null}
 
       <div className="page-actions">
@@ -193,7 +219,7 @@ export function PortfolioPage({
         <form className="inline-add-form" onSubmit={(e) => void handleAddSubmit(e)}>
           <input
             type="text"
-            placeholder="銘柄コード（例: 7203）"
+            placeholder="銘柄コード（例: 7203）またはティッカー（例: AAPL）"
             value={addCode}
             onChange={(e) => setAddCode(e.target.value)}
           />
@@ -205,7 +231,7 @@ export function PortfolioPage({
           />
           <input
             type="number"
-            placeholder="平均取得単価"
+            placeholder="平均取得単価（日本株は円、米国株はドル）"
             value={addAvgCost}
             onChange={(e) => setAddAvgCost(e.target.value)}
           />
@@ -222,44 +248,49 @@ export function PortfolioPage({
         </div>
       ) : null}
 
-      <HoldingsTable
-        holdings={sortedHoldings}
-        loading={loading}
-        sortBy={sortBy}
-        sortDesc={sortDesc}
-        onSort={handleSort}
-        onRemove={(code) => {
-          void onRemove(code)
-          // 詳細パネルを開いたまま削除した場合、存在しない銘柄のパネルが残らないよう閉じる
-          if (code === detailCode) setDetailCode(null)
-        }}
-        watchedCodes={watchedCodes}
-        onToggleWatch={onToggleWatch}
-        selected={selected}
-        onToggleSelect={onToggleSelect}
-        onRowClick={setDetailCode}
-      />
-
-      {detailCode ? (
-        <StockDetail
-          // 別銘柄への切り替え時に前の銘柄のチャート/統計が残らないよう再マウントする
-          key={detailCode}
-          code={detailCode}
-          row={detailRow}
-          onClose={() => setDetailCode(null)}
-          holding={
-            detailHolding
-              ? {
-                  quantity: detailHolding.quantity,
-                  avgCost: detailHolding.avg_cost,
-                  marketValue: detailHolding.market_value,
-                  pnl: detailHolding.pnl,
-                  pnlPct: detailHolding.pnl_pct,
-                }
-              : undefined
-          }
-        />
-      ) : null}
+      {!loading && holdings.length === 0 ? (
+        <div className="table-empty">保有銘柄が登録されていません</div>
+      ) : (
+        <>
+          {/* 円建て/ドル建てを合算した単一の総資産額は表示しない（為替レートが
+              必要になり、CSVインポートの通貨モデルをドル建てのまま保つ方針
+              [issue #62] と矛盾するため）。合計は通貨ごとに独立して表示する。 */}
+          <MarketSection label="日本株" count={jp.sorted.length}>
+            <PortfolioSummary holdings={jp.sorted} currency="JPY" />
+            <HoldingsTable
+              holdings={jp.sorted}
+              sortBy={jp.sortBy}
+              sortDesc={jp.sortDesc}
+              onSort={jp.handleSort}
+              onRemove={handleRemove}
+              watchedCodes={watchedCodes}
+              onToggleWatch={onToggleWatch}
+              selected={selected}
+              onToggleSelect={onToggleSelect}
+              onRowClick={openDetails.toggle}
+              openCodes={openDetails.items}
+              renderDetail={renderDetail}
+            />
+          </MarketSection>
+          <MarketSection label="米国株" count={us.sorted.length}>
+            <PortfolioSummary holdings={us.sorted} currency="USD" />
+            <HoldingsTable
+              holdings={us.sorted}
+              sortBy={us.sortBy}
+              sortDesc={us.sortDesc}
+              onSort={us.handleSort}
+              onRemove={handleRemove}
+              watchedCodes={watchedCodes}
+              onToggleWatch={onToggleWatch}
+              selected={selected}
+              onToggleSelect={onToggleSelect}
+              onRowClick={openDetails.toggle}
+              openCodes={openDetails.items}
+              renderDetail={renderDetail}
+            />
+          </MarketSection>
+        </>
+      )}
     </main>
   )
 }

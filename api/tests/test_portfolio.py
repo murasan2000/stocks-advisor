@@ -8,8 +8,10 @@ import pytest
 
 from app.services.portfolio.repository import HoldingsRepository
 from app.services.portfolio.service import PortfolioService
+from app.services.screener import us_quote
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
+from app.types.api import StockRow
 from app.utils.settings import settings
 
 
@@ -97,6 +99,65 @@ async def test_list_holdings_falls_back_when_missing_from_snapshot(
     assert holdings[0].market_value is None
     assert holdings[0].pnl is None
     assert holdings[0].cost_value == 500.0
+
+
+async def test_list_holdings_mock_mode_synthesizes_us_quote(
+    portfolio: tuple[PortfolioService, ScreenerService],
+) -> None:
+    pf, _ = portfolio
+    await pf.upsert("AAPL", 7, 150.0)  # mockモード（fixtureのデフォルト）
+    holdings = await pf.list_holdings()
+    assert len(holdings) == 1
+    assert holdings[0].code == "AAPL"
+    assert holdings[0].price is not None  # 決定論的合成データが入る
+    assert holdings[0].market_value is not None
+    assert holdings[0].pnl is not None
+
+
+async def test_list_holdings_fetches_us_quote_when_live(
+    portfolio: tuple[PortfolioService, ScreenerService],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    us_quote._fetch_us_quote_live.cache_clear()  # TTLキャッシュを分離
+    pf, _ = portfolio
+    monkeypatch.setattr(settings, "external_api_mode", "live")
+
+    def fake_fetch_live_quote(code: str) -> StockRow:
+        return StockRow(
+            code=code, symbol=code, name="Apple Inc.", market="NMS", price=200.0
+        )
+
+    monkeypatch.setattr(us_quote, "fetch_live_quote", fake_fetch_live_quote)
+
+    await pf.upsert("AAPL", 7, 150.0)
+    holdings = await pf.list_holdings()
+    assert len(holdings) == 1
+    assert holdings[0].name == "Apple Inc."
+    assert holdings[0].price == 200.0
+    assert holdings[0].market_value == 7 * 200.0
+    assert holdings[0].pnl == 7 * 200.0 - 7 * 150.0
+
+
+async def test_list_holdings_us_quote_falls_back_on_failure(
+    portfolio: tuple[PortfolioService, ScreenerService],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    us_quote._fetch_us_quote_live.cache_clear()
+    pf, _ = portfolio
+    monkeypatch.setattr(settings, "external_api_mode", "live")
+
+    def raising_fetch_live_quote(code: str) -> StockRow:
+        raise RuntimeError("network error")
+
+    monkeypatch.setattr(us_quote, "fetch_live_quote", raising_fetch_live_quote)
+
+    await pf.upsert("MSFT", 3, 300.0)
+    holdings = await pf.list_holdings()
+    assert holdings[0].code == "MSFT"
+    assert holdings[0].price is None  # 取得失敗 → 空欄（円/ドル混在にはならない）
+    assert holdings[0].market_value is None
+    assert holdings[0].pnl is None
+    assert holdings[0].cost_value == 900.0  # 取得額はavg_cost入力どおり計算される
 
 
 async def test_import_csv_upserts_without_deleting_existing(
