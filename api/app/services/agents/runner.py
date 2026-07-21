@@ -13,7 +13,7 @@ import logging
 import time
 from typing import Any
 
-from app.services.agents import company, general, orchestrator
+from app.services.agents import company, general, market, orchestrator
 from app.services.agents.runtime import build_run_config
 from app.services.agents.state import new_state
 from app.services.jobs.repository import JobRepository
@@ -29,6 +29,7 @@ _GRAPHS: dict[str, Any] = {
     "auto": orchestrator.graph,
     "general": general.graph,
     "company": company.graph,
+    "market": market.graph,
 }
 
 # kind -> 事前登録する実行プラン（ノードkey列）。auto は classify 後に動的追加。
@@ -36,6 +37,7 @@ _PLANS: dict[str, list[str]] = {
     "auto": ["classify"],
     "general": ["search", "answer"],
     "company": ["resolve", "collect", "analyze", "report"],
+    "market": ["select_categories", "collect", "analyze", "report"],
 }
 
 # ノードkey -> (表示ラベル, 実行中フェーズ)
@@ -44,6 +46,7 @@ _NODE_META: dict[str, tuple[str, AgentPhase]] = {
     "general": ("一般質問エージェント", AgentPhase.GENERATING_REPORT),
     "company": ("企業分析エージェント", AgentPhase.SEARCHING),
     "resolve": ("対象銘柄の特定", AgentPhase.SEARCHING),
+    "select_categories": ("対象カテゴリの選定", AgentPhase.SEARCHING),
     "collect": ("情報収集", AgentPhase.SEARCHING),
     "analyze": ("AI分析", AgentPhase.GENERATING_REPORT),
     "report": ("レポート生成", AgentPhase.GENERATING_REPORT),
@@ -69,15 +72,24 @@ def _summarize(node: str, update: dict[str, Any]) -> str | None:
     if node == "resolve":
         tickers = update.get("tickers") or []
         return f"対象: {', '.join(tickers)}" if tickers else "対象銘柄なし"
+    if node == "select_categories":
+        categories = update.get("market_categories") or []
+        if not categories:
+            return "対象カテゴリなし"
+        return f"対象カテゴリ: {', '.join(categories)}"
     if node == "search":
         results = update.get("search_results") or []
         return f"参考情報 {len(results)} 件を取得"
     if node == "collect":
-        facts = update.get("company_facts") or {}
-        return f"{len(facts)} 銘柄の情報を収集"
+        facts = update.get("company_facts")
+        if facts is None:
+            facts = update.get("market_facts") or {}
+        return f"{len(facts)} 件の情報を収集"
     if node == "analyze":
-        analyses = update.get("company_analyses") or {}
-        return f"{len(analyses)} 銘柄のAI分析が完了"
+        analyses = update.get("company_analyses")
+        if analyses is None:
+            analyses = update.get("market_analyses") or {}
+        return f"{len(analyses)} 件のAI分析が完了"
     answer = update.get("answer")
     return _truncate(str(answer)) if answer else None
 
@@ -173,10 +185,11 @@ async def run_agent_job(
     kind: str,
     query: str,
     tickers: list[str] | None = None,
+    categories: list[str] | None = None,
 ) -> None:
     """エージェントジョブをバックグラウンドで実行し、進捗・結果を保存する。"""
     log = logging.LoggerAdapter(logger, {"job_id": job_id})
-    state = new_state(query, tickers)
+    state = new_state(query, tickers, categories)
     config = build_run_config(f"agent:{kind}")
     tracker = _ProgressTracker(job_id, repo, list(_PLANS.get(kind, [])))
     started = time.monotonic()

@@ -9,11 +9,13 @@ from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
 
+from app.services.agents import market as market_agent
 from app.services.agents.runner import run_agent_job
 from app.services.chat.repository import ChatRepository
 from app.services.chat.service import accept_message, run_chat_agent_job
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_refresh_job
+from app.services.market.fx import fetch_fx_quotes
 from app.services.portfolio.repository import HoldingsRepository
 from app.services.portfolio.service import PortfolioService
 from app.services.screener.history import fetch_candles_live_cached, synth_candles
@@ -24,11 +26,13 @@ from app.services.watchlist.service import WatchlistService
 from app.types.api import (
     AgentJobRequest,
     CreateJobResponse,
+    FxQuote,
     HealthResponse,
     HistoryPeriod,
     Holding,
     HoldingRequest,
     ImportResult,
+    MarketCategoryInfo,
     ScreenerMeta,
     StockHistory,
     StockRow,
@@ -335,16 +339,41 @@ async def create_agent_job(request: AgentJobRequest) -> CreateJobResponse:
     """エージェントジョブを作成し、バックグラウンドで実行する。
 
     進捗・結果は GET /api/v1/jobs/{job_id} でポーリングする（Job 非同期方式）。
-    kind=general/company は各子エージェントの独立実行に相当する。
+    kind=general/company/market は各子エージェントの独立実行に相当する。
     """
     job_id = str(uuid.uuid4())
     await _job_repo.create(job_id, request.query)
     _spawn(
         run_agent_job(
-            job_id, _job_repo, request.kind, request.query, request.tickers
+            job_id,
+            _job_repo,
+            request.kind,
+            request.query,
+            request.tickers,
+            request.categories,
         )
     )
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
+
+
+# ---------------------------------------------------------------------------
+# マーケット情報画面
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/market/categories", response_model=list[MarketCategoryInfo])
+async def market_categories() -> list[MarketCategoryInfo]:
+    """マーケット情報のカテゴリ一覧を返す（カテゴリボックス表示用）。"""
+    return [
+        MarketCategoryInfo(id=c["id"], label=c["label"])
+        for c in market_agent.MARKET_CATEGORIES
+    ]
+
+
+@app.get("/api/v1/market/fx", response_model=list[FxQuote])
+async def market_fx() -> list[FxQuote]:
+    """為替クオート一覧を返す（為替パネル表示用）。"""
+    return await fetch_fx_quotes()
 
 
 # ---------------------------------------------------------------------------

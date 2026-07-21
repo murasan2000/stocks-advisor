@@ -33,6 +33,14 @@ class CompanyFacts(TypedDict):
     filings: list[str]  # 直近の開示（EDINET。例: "2026-06-25 有価証券報告書"）
 
 
+class MarketFacts(TypedDict):
+    """マーケット情報収集エージェントが収集する 1 カテゴリ分の事実情報。"""
+
+    category: str  # カテゴリID（例: "jp_stocks"）
+    label: str  # 表示名（例: "日本株市況"）
+    news: list[SearchResult]  # 関連ニュース（Web検索 topic=news）
+
+
 class AgentState(TypedDict):
     """親・子エージェントで共有する状態。"""
 
@@ -42,12 +50,21 @@ class AgentState(TypedDict):
     search_results: list[SearchResult]  # Web検索の結果（引用に使う）
     company_facts: dict[str, CompanyFacts]  # 企業分析: code -> 収集済み事実
     company_analyses: dict[str, str]  # 企業分析: code -> AI分析（Markdown断片）
+    # マーケット情報: 収集対象カテゴリID（未指定なら全カテゴリ）
+    market_categories: list[str]
+    market_facts: dict[str, MarketFacts]  # マーケット情報: category -> 収集済み事実
+    # マーケット情報: category -> AI要約（Markdown断片）
+    market_analyses: dict[str, str]
     answer: str  # 最終回答（Markdown）
-    reports: dict[str, str]  # 企業分析: ticker -> レポート
+    reports: dict[str, str]  # 企業分析/マーケット情報: code/category -> レポート
     errors: Annotated[list[AgentError], operator.add]
 
 
-def new_state(query: str, tickers: list[str] | None = None) -> AgentState:
+def new_state(
+    query: str,
+    tickers: list[str] | None = None,
+    categories: list[str] | None = None,
+) -> AgentState:
     """初期状態を生成する。"""
     return AgentState(
         query=query,
@@ -56,6 +73,9 @@ def new_state(query: str, tickers: list[str] | None = None) -> AgentState:
         search_results=[],
         company_facts={},
         company_analyses={},
+        market_categories=list(categories or []),
+        market_facts={},
+        market_analyses={},
         answer="",
         reports={},
         errors=[],
