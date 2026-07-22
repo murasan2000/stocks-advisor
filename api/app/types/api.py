@@ -19,11 +19,15 @@ class AgentJobRequest(BaseModel):
       - "auto":    親エージェントが意図判定して委任
       - "general": 一般質問エージェントを直接実行（独立API）
       - "company": 企業分析エージェントを直接実行（独立API）
+      - "market":  マーケット情報収集エージェントを直接実行（独立API、
+                   categories未指定/不明IDのみなら全カテゴリ）
     """
 
-    kind: Literal["auto", "general", "company"] = "auto"
+    kind: Literal["auto", "general", "company", "market"] = "auto"
     query: str = Field(min_length=1, max_length=4000)
     tickers: list[str] = Field(default_factory=list)
+    # kind="market" の対象カテゴリID
+    categories: list[str] = Field(default_factory=list)
 
 
 class HealthResponse(BaseModel):
@@ -152,3 +156,24 @@ class ImportResult(BaseModel):
     """CSVインポートの結果。"""
 
     imported: int  # 反映した銘柄数（重複統合後）
+
+
+# ---------------------------------------------------------------------------
+# マーケット情報画面
+# ---------------------------------------------------------------------------
+
+
+class MarketCategoryInfo(BaseModel):
+    """マーケット情報のカテゴリ定義（カテゴリボックス表示用）。"""
+
+    id: str
+    label: str
+
+
+class FxQuote(BaseModel):
+    """為替クオート（マーケット画面・為替パネル向け）。"""
+
+    symbol: str  # Yahoo Finance シンボル（例: "USDJPY=X"）
+    label: str  # 表示名（例: "米ドル/円"）
+    price: float | None = None
+    change_pct: float | None = None
