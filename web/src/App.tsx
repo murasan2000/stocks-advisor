@@ -4,6 +4,7 @@ import { AiButton } from './components/chat/AiButton'
 import { ChatModal } from './components/chat/ChatModal'
 import { ChatToast } from './components/chat/ChatToast'
 import { Sidebar } from './components/Sidebar'
+import { MarketPage } from './components/market/MarketPage'
 import { PortfolioPage } from './components/portfolio/PortfolioPage'
 import { FilterPanel, type PanelFilters } from './components/screener/FilterPanel'
 import { ScreenerHeader } from './components/screener/ScreenerHeader'
@@ -11,11 +12,12 @@ import { StatCards } from './components/screener/StatCards'
 import { StockTable } from './components/screener/StockTable'
 import { WatchlistPage } from './components/watchlist/WatchlistPage'
 import { useChat } from './hooks/useChat'
+import { useMarket } from './hooks/useMarket'
 import { usePortfolio } from './hooks/usePortfolio'
 import { useScreener } from './hooks/useScreener'
 import { useWatchlist } from './hooks/useWatchlist'
 
-export type View = 'screener' | 'watchlist' | 'portfolio'
+export type View = 'screener' | 'watchlist' | 'portfolio' | 'market'
 
 export default function App() {
   const chat = useChat()
@@ -49,6 +51,8 @@ export default function App() {
     removeHolding,
     importCsv,
   } = usePortfolio()
+  const market = useMarket()
+  const { loadCategories: loadMarketCategories, loadFx: loadMarketFx } = market
   const [view, setView] = useState<View>('screener')
   // 企業分析の対象として選択中の銘柄コード
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -63,8 +67,12 @@ export default function App() {
       setView(next)
       if (next === 'watchlist') void loadWatchlistRows()
       if (next === 'portfolio') void loadHoldings()
+      if (next === 'market') {
+        void loadMarketCategories()
+        void loadMarketFx()
+      }
     },
-    [loadWatchlistRows, loadHoldings],
+    [loadWatchlistRows, loadHoldings, loadMarketCategories, loadMarketFx],
   )
 
   // 検索語の反映。関数更新にして恒常的に同一 identity を保ち、
@@ -137,6 +145,8 @@ export default function App() {
           onToggleSelect={toggleSelect}
           stocks={stocks}
         />
+      ) : view === 'market' ? (
+        <MarketPage market={market} />
       ) : (
         <main className="screener-main">
           <ScreenerHeader

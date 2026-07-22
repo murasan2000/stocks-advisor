@@ -259,3 +259,19 @@ export interface Holding {
 export interface ImportResult {
   imported: number
 }
+
+// ───────────────────────────────────────────────
+// マーケット情報画面
+// ───────────────────────────────────────────────
+
+export interface MarketCategoryInfo {
+  id: string
+  label: string
+}
+
+export interface FxQuote {
+  symbol: string
+  label: string
+  price: number | null
+  change_pct: number | null
+}
