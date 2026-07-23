@@ -48,6 +48,18 @@ export function useMarket() {
   const [calendarOpen, setCalendarOpen] = useState(false)
   // カテゴリごとの「レポートが存在する日付一覧」（カレンダーの非活性判定用）
   const [availableDates, setAvailableDates] = useState<Record<string, string[]>>({})
+  // availableDates の最新値を同期的に参照するためのミラー。setAvailableDates は
+  // 次のレンダーまで反映されないため、fetch直後に同一関数内で最新値を使いたい
+  // （toggleCategory→viewDate の呼び出し）場合は state ではなくこちらを見る。
+  const availableDatesRef = useRef<Record<string, string[]>>({})
+  const updateAvailableDates = useCallback(
+    (updater: (prev: Record<string, string[]>) => Record<string, string[]>) => {
+      const next = updater(availableDatesRef.current)
+      availableDatesRef.current = next
+      setAvailableDates(next)
+    },
+    [],
+  )
   const [reports, setReports] = useState<Record<string, CategoryReport>>({})
   // 日付切替時、切り替え前のポーリングループが古い結果を書き込まないようにする。
   // await の直後は必ず再チェックしてから setState する（チェックと書き込みの間に
@@ -92,18 +104,21 @@ export function useMarket() {
     }))
   }, [])
 
-  const loadAvailableDates = useCallback(async (categoryId: string): Promise<string[]> => {
-    try {
-      const dates = await getMarketReportDates(categoryId)
-      setAvailableDates((prev) => ({ ...prev, [categoryId]: dates }))
-      return dates
-    } catch {
-      // 失敗時は state に記録しない（categoryId が availableDates に無いままにし、
-      // 次回カテゴリを開いた際に再試行できるようにする。失敗を空配列として
-      // 記録すると、以後ずっとカレンダーが「日付なし」のまま再取得されなくなる）。
-      return []
-    }
-  }, [])
+  const loadAvailableDates = useCallback(
+    async (categoryId: string): Promise<string[]> => {
+      try {
+        const dates = await getMarketReportDates(categoryId)
+        updateAvailableDates((prev) => ({ ...prev, [categoryId]: dates }))
+        return dates
+      } catch {
+        // 失敗時は state に記録しない（categoryId が availableDates に無いままにし、
+        // 次回カテゴリを開いた際に再試行できるようにする。失敗を空配列として
+        // 記録すると、以後ずっとカレンダーが「日付なし」のまま再取得されなくなる）。
+        return []
+      }
+    },
+    [updateAvailableDates],
+  )
 
   // 本日分をAIで生成する（Job非同期＋ポーリング。完了時はバックエンド側でDBへ
   // upsertされる）。既に本日分がある場合も無条件に再実行し、DBの行を上書きする。
@@ -132,7 +147,7 @@ export function useMarket() {
               loading: false,
               error: null,
             })
-            setAvailableDates((prev) => {
+            updateAvailableDates((prev) => {
               const existing = prev[categoryId] ?? []
               if (existing.includes(today)) return prev
               return { ...prev, [categoryId]: [today, ...existing] }
@@ -166,7 +181,7 @@ export function useMarket() {
         })
       }
     },
-    [patchReport],
+    [patchReport, updateAvailableDates],
   )
 
   // カレンダーで日付を選ぶ／初回オープン時の表示切替。本日分でまだ何も無ければ
@@ -176,7 +191,11 @@ export function useMarket() {
       setViewingDate(targetDate)
       setCalendarOpen(false)
       const today = todayIso()
-      const hasSavedData = (availableDates[categoryId] ?? []).includes(targetDate)
+      // availableDates state ではなく ref を見る。toggleCategory は
+      // loadAvailableDates 完了直後にこの viewDate を呼ぶが、setState は次のレンダー
+      // まで反映されないため、state を見ると常に「未取得」判定になってしまう
+      // （取得済みのDBキャッシュがあるのに毎回AI再生成してしまうバグの原因だった）。
+      const hasSavedData = (availableDatesRef.current[categoryId] ?? []).includes(targetDate)
       const key = reportKey(categoryId, targetDate)
       if (targetDate === today && !hasSavedData) {
         // 生成中/生成済みなら再実行しない（カレンダーの「本日」セルは常に押せる
@@ -204,7 +223,7 @@ export function useMarket() {
         })
       }
     },
-    [availableDates, generateReport, patchReport],
+    [generateReport, patchReport],
   )
 
   // カテゴリボックス押下: 開いていれば畳む、閉じていれば開く。開く際は常に
@@ -220,7 +239,7 @@ export function useMarket() {
       }
       const mySeq = ++openSeqRef.current
       setOpenCategory(categoryId)
-      if (!(categoryId in availableDates)) {
+      if (!(categoryId in availableDatesRef.current)) {
         await loadAvailableDates(categoryId)
       }
       // 日付一覧の取得中に別カテゴリへ切り替わっていたら、ここで打ち切る
@@ -229,7 +248,7 @@ export function useMarket() {
       if (openSeqRef.current !== mySeq) return
       await viewDate(categoryId, todayIso())
     },
-    [openCategory, availableDates, loadAvailableDates, viewDate],
+    [openCategory, loadAvailableDates, viewDate],
   )
 
   const toggleCalendar = useCallback(() => {
