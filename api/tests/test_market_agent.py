@@ -6,7 +6,6 @@ LLM 非依存にするため invoke_llm はモックに差し替える（他エ�
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any
 
 import pytest
@@ -17,6 +16,7 @@ from app.services.agents.state import MarketFacts
 from app.services.jobs.repository import JobRepository
 from app.services.market.report_repository import MarketReportRepository
 from app.types.jobs import AgentPhase, JobStatus
+from app.utils.dates import today_jst
 
 
 async def _fake_llm(
@@ -63,7 +63,7 @@ async def test_market_agent_defaults_to_all_categories_when_unknown(
     assert "# 米国株市況" in answer
 
 
-async def test_market_agent_appends_citations(
+async def test_market_agent_news_items_link_to_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _fake_search(query: str, **kwargs: Any) -> list[dict[str, str]]:
@@ -76,8 +76,9 @@ async def test_market_agent_appends_citations(
 
     answer = await market.run(categories=["jp_stocks"])
     assert "[LLM]" in answer  # LLM要約が呼ばれている
-    assert "#### 出典" in answer
-    assert "[日経平均が反発](https://e.com/1)" in answer
+    # ニュース一覧とは別に出典セクションを設けない（重複表示を避けるため統合した）
+    assert "#### 出典" not in answer
+    assert "- [日経平均が反発](https://e.com/1) — 概況" in answer
     assert "投資判断はご自身の責任で" in answer  # 免責
 
 
@@ -179,7 +180,7 @@ async def test_run_agent_job_market_kind_persists_report(
         market_report_repo=report_repo,
     )
 
-    today = date.today().isoformat()
+    today = today_jst().isoformat()
     saved = await report_repo.get("jp_stocks", today)
     assert saved is not None
     assert "# 日本株市況" in saved.content
@@ -210,6 +211,6 @@ async def test_run_agent_job_market_kind_rerun_overwrites_today(
             market_report_repo=report_repo,
         )
 
-    today = date.today().isoformat()
+    today = today_jst().isoformat()
     dates = await report_repo.list_dates("jp_stocks")
     assert dates == [today]  # 行が増えていない（上書き）

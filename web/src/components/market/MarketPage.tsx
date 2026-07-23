@@ -197,6 +197,7 @@ export function MarketPage({ market }: Props) {
                   availableDates={availableDates[openCategory] ?? []}
                   selectedDate={viewingDate}
                   onSelect={(date) => void viewDate(openCategory, date)}
+                  onClose={toggleCalendar}
                 />
               ) : null}
               <MarketReport report={openReport} onOpenEvidence={evidence.open} />

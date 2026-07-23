@@ -90,22 +90,20 @@ def _facts_to_prompt(facts: MarketFacts) -> str:
 
 
 def build_report(facts: MarketFacts, analysis: str) -> str:
-    """1 カテゴリ分の Markdown レポートを組み立てる（純粋関数）。"""
+    """1 カテゴリ分の Markdown レポートを組み立てる（純粋関数）。
+
+    ニュース一覧の各項目はタイトル自体を出典へのリンクにし、末尾に別途
+    「出典」セクションを設けない（同じニュースが二重に列挙されて分かりにくい
+    という UI フィードバックを踏まえた設計）。
+    """
     lines = [f"# {facts['label']}", "", analysis, "", "## ニュース一覧"]
     if facts["news"]:
         for n in facts["news"]:
             snippet = f" — {n['snippet'][:100]}" if n["snippet"] else ""
-            lines.append(f"- {n['title']}{snippet}")
+            lines.append(f"- [{n['title']}]({n['url']}){snippet}")
     else:
         lines.append("- 関連ニュースは取得できませんでした（検索キー未設定または0件）")
     lines += ["", "---", _DISCLAIMER]
-
-    if facts["news"]:
-        lines += ["", "#### 出典"]
-        lines += [
-            f"{i}. [{n['title']}]({n['url']})"
-            for i, n in enumerate(facts["news"], start=1)
-        ]
     return "\n".join(lines)
 
 

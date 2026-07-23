@@ -1855,12 +1855,40 @@ input {
   background: rgba(99, 102, 241, 0.14);
 }
 
-.report-calendar {
-  margin-bottom: 16px;
-  padding: 12px;
-  background: var(--surface);
+/* カレンダーはレポートパネル内にインラインで置くと縦に長くなりすぎるため、
+   モーダル（chat-overlay と同じ導線）で表示する（issue #66 フィードバック対応）。 */
+.report-calendar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 16px;
+}
+.report-calendar-modal {
+  width: 100%;
+  max-width: 300px;
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  padding: 16px;
+}
+.report-calendar-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.report-calendar-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-3);
 }
 .report-calendar-header {
   display: flex;
@@ -1970,29 +1998,17 @@ input {
   border-radius: var(--radius-sm);
   padding: 10px 14px;
 }
-
-.market-report-content ol {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-}
-.market-report-content ol li a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 12px;
+/* ニュース一覧の項目は見出し自体が出典リンクを兼ねる（issue #66フィードバック:
+   ニュース一覧と出典が別々だと同じ項目が二重に見えるため統合した）。 */
+.market-report-content ul li a {
   color: var(--accent-3);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
 }
-.market-report-content ol li a:hover {
-  background: var(--surface-hover);
-  border-color: var(--accent-1);
+.market-report-content ul li a:hover {
+  text-decoration-color: currentColor;
 }
 
 .market-report-content hr {
