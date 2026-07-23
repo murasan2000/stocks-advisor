@@ -1730,3 +1730,339 @@ input {
   color: var(--error);
   background: rgba(239, 68, 68, 0.12);
 }
+
+/* ───────────────────────── マーケット情報画面 ───────────────────────── */
+
+.market-body {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 18px;
+  margin-top: 20px;
+  align-items: start;
+}
+
+/* 出典プレビュー（issue #56）表示中は、iframeが読める幅を確保するため右カラムを広げる */
+.market-body--evidence-open {
+  grid-template-columns: 1fr 420px;
+}
+
+@media (max-width: 900px) {
+  .market-body,
+  .market-body--evidence-open {
+    grid-template-columns: 1fr;
+  }
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.category-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-align: left;
+}
+.category-box:hover {
+  border-color: var(--accent-1);
+}
+.category-box--active {
+  border-color: var(--accent-1);
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.category-box-label {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.category-box-status {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.market-report-panel {
+  margin-top: 18px;
+  padding: 22px 24px;
+  background: linear-gradient(180deg, var(--bg-elevated), rgba(255, 255, 255, 0.015));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px -20px rgba(0, 0, 0, 0.6);
+}
+
+.market-report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.market-report-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--accent-3);
+}
+
+/* マーケット画面で使うアイコンのみの小ボタン（更新・新規タブで開く・閉じる等）の共通スタイル */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+}
+.icon-btn:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.icon-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.market-report-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--error);
+  font-size: 13px;
+}
+
+/* レポート本文（ReactMarkdown）のモダン化。チャットの吹き出し等が使う
+   共通の .md には影響させず、市況レポート表示にだけ上乗せで適用する。 */
+
+.market-report-content .report-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-3);
+  margin: 28px 0 12px;
+}
+.market-report-content .report-heading svg {
+  flex-shrink: 0;
+}
+.market-report-content .report-heading--sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 22px;
+}
+
+.market-report-content h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-2);
+  border-left: 3px solid var(--accent-2);
+  padding-left: 10px;
+  margin: 18px 0 8px;
+}
+
+.market-report-content ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.market-report-content ul li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-3);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+}
+
+.market-report-content ol {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.market-report-content ol li a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--accent-3);
+}
+.market-report-content ol li a:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent-1);
+}
+
+.market-report-content hr {
+  border: none;
+  height: 1px;
+  margin: 22px 0;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+}
+
+.evidence-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+}
+
+.evidence-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.evidence-panel-host {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.evidence-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.evidence-panel-title {
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-panel-blocked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.evidence-panel-blocked a {
+  color: var(--accent-3);
+}
+
+.evidence-panel-hint {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.evidence-panel-frame-wrap {
+  position: relative;
+  height: 480px;
+}
+.evidence-panel-frame-wrap .loading-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  margin-bottom: 0;
+}
+
+.evidence-panel-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.evidence-panel-frame--visible {
+  opacity: 1;
+}
+
+.market-fx-panel {
+  padding: 16px 18px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.market-fx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.market-fx-header h2 {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.market-fx-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.market-fx-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.market-fx-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  row-gap: 2px;
+}
+
+.market-fx-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.market-fx-price {
+  grid-row: 2;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.market-fx-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  justify-self: end;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.market-fx-change.up {
+  color: var(--success);
+}
+.market-fx-change.down {
+  color: var(--error);
+}

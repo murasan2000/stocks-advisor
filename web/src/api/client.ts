@@ -3,10 +3,12 @@ import type {
   ConversationMessage,
   CreateJobResponse,
   Filters,
+  FxQuote,
   HistoryPeriod,
   Holding,
   ImportResult,
   Job,
+  MarketCategoryInfo,
   ScreenerMeta,
   SendMessageResponse,
   StockHistory,
@@ -194,4 +196,28 @@ export function postMessage(
     `/chat/conversations/${conversationId}/messages`,
     { method: 'POST', body: JSON.stringify({ content, tickers: tickers ?? [] }) },
   )
+}
+
+// ───────────────────────────────────────────────
+// マーケット情報画面
+// ───────────────────────────────────────────────
+
+export function getMarketCategories(): Promise<MarketCategoryInfo[]> {
+  return request<MarketCategoryInfo[]>('/market/categories')
+}
+
+export function getMarketFx(): Promise<FxQuote[]> {
+  return request<FxQuote[]>('/market/fx')
+}
+
+// カテゴリを1件指定してレポートJobを作成する（kind=market の汎用エージェントJob）。
+export function createMarketReportJob(categoryId: string): Promise<CreateJobResponse> {
+  return request<CreateJobResponse>('/jobs', {
+    method: 'POST',
+    body: JSON.stringify({
+      kind: 'market',
+      query: 'マーケット情報',
+      categories: [categoryId],
+    }),
+  })
 }

@@ -17,12 +17,10 @@ const NAV_ITEMS: NavItem[] = [
   { view: 'screener', icon: <SlidersHorizontal size={18} />, label: 'スクリーニング' },
   { view: 'watchlist', icon: <Bookmark size={18} />, label: 'ウォッチリスト' },
   { view: 'portfolio', icon: <Briefcase size={18} />, label: '保有銘柄' },
+  { view: 'market', icon: <LineChart size={18} />, label: 'マーケット' },
 ]
 
-const DISABLED_ITEMS = [
-  { icon: <LineChart size={18} />, label: 'マーケット' },
-  { icon: <Settings size={18} />, label: '設定' },
-]
+const DISABLED_ITEMS = [{ icon: <Settings size={18} />, label: '設定' }]
 
 interface Props {
   view: View
