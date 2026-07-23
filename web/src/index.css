@@ -1800,11 +1800,16 @@ input {
 
 .market-report-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding-bottom: 14px;
   margin-bottom: 16px;
   border-bottom: 1px solid var(--border);
+}
+.market-report-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .market-report-header h2 {
   display: flex;
@@ -1814,6 +1819,17 @@ input {
   font-weight: 800;
   letter-spacing: -0.01em;
   color: var(--accent-3);
+}
+.market-report-date {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding-left: 23px; /* アイコン(15px)+gap(8px) に揃える */
+}
+
+.market-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 /* マーケット画面で使うアイコンのみの小ボタン（更新・新規タブで開く・閉じる等）の共通スタイル */
@@ -1833,6 +1849,70 @@ input {
 .icon-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.icon-btn--active {
+  color: var(--accent-1);
+  background: rgba(99, 102, 241, 0.14);
+}
+
+.report-calendar {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.report-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.report-calendar-weekdays,
+.report-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.report-calendar-weekdays span {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-bottom: 4px;
+}
+.report-calendar-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.report-calendar-cell--empty {
+  visibility: hidden;
+}
+.report-calendar-cell:disabled {
+  color: var(--text-muted);
+  opacity: 0.4;
+  cursor: default;
+}
+.report-calendar-cell:not(:disabled):hover {
+  background: var(--surface-hover);
+}
+.report-calendar-cell--has-data:not(:disabled) {
+  color: var(--accent-3);
+  font-weight: 700;
+}
+.report-calendar-cell--today {
+  border: 1px solid var(--accent-1);
+}
+.report-calendar-cell--selected {
+  background: var(--accent-1);
+  color: #fff;
 }
 
 .market-report-error {

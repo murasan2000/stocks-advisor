@@ -9,6 +9,7 @@ import type {
   ImportResult,
   Job,
   MarketCategoryInfo,
+  MarketReport,
   ScreenerMeta,
   SendMessageResponse,
   StockHistory,
@@ -220,4 +221,16 @@ export function createMarketReportJob(categoryId: string): Promise<CreateJobResp
       categories: [categoryId],
     }),
   })
+}
+
+// レポートが保存されている日付一覧（新しい順、issue #66）。カレンダーの非活性判定に使う。
+export function getMarketReportDates(categoryId: string): Promise<string[]> {
+  return request<string[]>(`/market/reports/${encodeURIComponent(categoryId)}/dates`)
+}
+
+// 指定日の保存済みレポートを取得する（issue #66。Job不要・即時）。
+export function getMarketReport(categoryId: string, date: string): Promise<MarketReport> {
+  return request<MarketReport>(
+    `/market/reports/${encodeURIComponent(categoryId)}?date=${encodeURIComponent(date)}`,
+  )
 }

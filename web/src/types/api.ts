@@ -275,3 +275,12 @@ export interface FxQuote {
   price: number | null
   change_pct: number | null
 }
+
+// カテゴリ×日付で永続化されたレポート（issue #66）
+export interface MarketReport {
+  category_id: string
+  report_date: string // YYYY-MM-DD
+  content: string
+  created_at: number
+  updated_at: number
+}

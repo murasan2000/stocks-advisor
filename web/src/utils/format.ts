@@ -70,3 +70,30 @@ export function fmtTimestamp(epoch: number | null): string {
     `${pad(d.getHours())}:${pad(d.getMinutes())}`
   )
 }
+
+/** 端末ローカル日時から YYYY-MM-DD を作る（カレンダーのセル計算等、任意のY/M/Dを
+ * ローカルタイムゾーンで文字列化したい場合に使う）。 */
+export function dateToIso(d: Date): string {
+  const pad = (x: number) => String(x).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// 本アプリは日本株市場が主対象のため、「今日」は常にJST基準で判定する
+// （バックエンドの app/utils/dates.py の today_jst() と揃える）。ブラウザの
+// ローカルタイムゾーンに依存すると、サーバがUTC等でホストされた場合に
+// マーケットレポートの日付キーがサーバ側とずれてしまうため。
+export function todayIso(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
+/** YYYY-MM-DD を日本語の日付表示に整形する（例: "2026年7月23日"）。 */
+export function fmtIsoDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return iso
+  return `${y}年${m}月${d}日`
+}
