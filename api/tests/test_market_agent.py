@@ -14,7 +14,9 @@ from app.services.agents import market
 from app.services.agents.runner import run_agent_job
 from app.services.agents.state import MarketFacts
 from app.services.jobs.repository import JobRepository
+from app.services.market.report_repository import MarketReportRepository
 from app.types.jobs import AgentPhase, JobStatus
+from app.utils.dates import today_jst
 
 
 async def _fake_llm(
@@ -61,7 +63,7 @@ async def test_market_agent_defaults_to_all_categories_when_unknown(
     assert "# 米国株市況" in answer
 
 
-async def test_market_agent_appends_citations(
+async def test_market_agent_news_items_link_to_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _fake_search(query: str, **kwargs: Any) -> list[dict[str, str]]:
@@ -74,8 +76,9 @@ async def test_market_agent_appends_citations(
 
     answer = await market.run(categories=["jp_stocks"])
     assert "[LLM]" in answer  # LLM要約が呼ばれている
-    assert "#### 出典" in answer
-    assert "[日経平均が反発](https://e.com/1)" in answer
+    # ニュース一覧とは別に出典セクションを設けない（重複表示を避けるため統合した）
+    assert "#### 出典" not in answer
+    assert "- [日経平均が反発](https://e.com/1) — 概況" in answer
     assert "投資判断はご自身の責任で" in answer  # 免責
 
 
@@ -153,3 +156,61 @@ async def test_run_agent_job_market_kind(
         "report",
     ]
     assert all(s.status == AgentPhase.DONE for s in job.progress)
+
+
+async def test_run_agent_job_market_kind_persists_report(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """market kind の完了後、本日分としてDBへ保存されることを確認する（issue #66）。"""
+    monkeypatch.setattr(market, "invoke_llm", _fake_llm)
+    monkeypatch.setattr(market, "search_web", _no_search)
+
+    job_repo = JobRepository(str(tmp_path / "jobs.db"))
+    await job_repo.initialize()
+    await job_repo.create("j4", "マーケット情報")
+    report_repo = MarketReportRepository(str(tmp_path / "market_reports.db"))
+    await report_repo.initialize()
+
+    await run_agent_job(
+        "j4",
+        job_repo,
+        "market",
+        "マーケット情報",
+        categories=["jp_stocks"],
+        market_report_repo=report_repo,
+    )
+
+    today = today_jst().isoformat()
+    saved = await report_repo.get("jp_stocks", today)
+    assert saved is not None
+    assert "# 日本株市況" in saved.content
+    # 他カテゴリは要求していないため保存されない
+    assert await report_repo.get("us_stocks", today) is None
+
+
+async def test_run_agent_job_market_kind_rerun_overwrites_today(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同日の再実行はDBの行を上書きする（issue #66 の仕様）。"""
+    monkeypatch.setattr(market, "invoke_llm", _fake_llm)
+    monkeypatch.setattr(market, "search_web", _no_search)
+
+    job_repo = JobRepository(str(tmp_path / "jobs.db"))
+    await job_repo.initialize()
+    report_repo = MarketReportRepository(str(tmp_path / "market_reports.db"))
+    await report_repo.initialize()
+
+    for job_id in ("j5", "j6"):
+        await job_repo.create(job_id, "マーケット情報")
+        await run_agent_job(
+            job_id,
+            job_repo,
+            "market",
+            "マーケット情報",
+            categories=["jp_stocks"],
+            market_report_repo=report_repo,
+        )
+
+    today = today_jst().isoformat()
+    dates = await report_repo.list_dates("jp_stocks")
+    assert dates == [today]  # 行が増えていない（上書き）

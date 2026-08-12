@@ -177,3 +177,13 @@ class FxQuote(BaseModel):
     label: str  # 表示名（例: "米ドル/円"）
     price: float | None = None
     change_pct: float | None = None
+
+
+class MarketReport(BaseModel):
+    """カテゴリ×日付で永続化されたマーケットレポート（issue #66）。"""
+
+    category_id: str
+    report_date: str  # YYYY-MM-DD
+    content: str
+    created_at: float
+    updated_at: float

@@ -1800,11 +1800,16 @@ input {
 
 .market-report-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding-bottom: 14px;
   margin-bottom: 16px;
   border-bottom: 1px solid var(--border);
+}
+.market-report-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .market-report-header h2 {
   display: flex;
@@ -1814,6 +1819,17 @@ input {
   font-weight: 800;
   letter-spacing: -0.01em;
   color: var(--accent-3);
+}
+.market-report-date {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding-left: 23px; /* アイコン(15px)+gap(8px) に揃える */
+}
+
+.market-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 /* マーケット画面で使うアイコンのみの小ボタン（更新・新規タブで開く・閉じる等）の共通スタイル */
@@ -1833,6 +1849,98 @@ input {
 .icon-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.icon-btn--active {
+  color: var(--accent-1);
+  background: rgba(99, 102, 241, 0.14);
+}
+
+/* カレンダーはレポートパネル内にインラインで置くと縦に長くなりすぎるため、
+   モーダル（chat-overlay と同じ導線）で表示する（issue #66 フィードバック対応）。 */
+.report-calendar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 16px;
+}
+.report-calendar-modal {
+  width: 100%;
+  max-width: 300px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  padding: 16px;
+}
+.report-calendar-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.report-calendar-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-3);
+}
+.report-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.report-calendar-weekdays,
+.report-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.report-calendar-weekdays span {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding-bottom: 4px;
+}
+.report-calendar-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.report-calendar-cell--empty {
+  visibility: hidden;
+}
+.report-calendar-cell:disabled {
+  color: var(--text-muted);
+  opacity: 0.4;
+  cursor: default;
+}
+.report-calendar-cell:not(:disabled):hover {
+  background: var(--surface-hover);
+}
+.report-calendar-cell--has-data:not(:disabled) {
+  color: var(--accent-3);
+  font-weight: 700;
+}
+.report-calendar-cell--today {
+  border: 1px solid var(--accent-1);
+}
+.report-calendar-cell--selected {
+  background: var(--accent-1);
+  color: #fff;
 }
 
 .market-report-error {
@@ -1890,29 +1998,17 @@ input {
   border-radius: var(--radius-sm);
   padding: 10px 14px;
 }
-
-.market-report-content ol {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-}
-.market-report-content ol li a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-size: 12px;
+/* ニュース一覧の項目は見出し自体が出典リンクを兼ねる（issue #66フィードバック:
+   ニュース一覧と出典が別々だと同じ項目が二重に見えるため統合した）。 */
+.market-report-content ul li a {
   color: var(--accent-3);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
 }
-.market-report-content ol li a:hover {
-  background: var(--surface-hover);
-  border-color: var(--accent-1);
+.market-report-content ul li a:hover {
+  text-decoration-color: currentColor;
 }
 
 .market-report-content hr {

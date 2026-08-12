@@ -17,7 +17,9 @@ from app.services.agents import company, general, market, orchestrator
 from app.services.agents.runtime import build_run_config
 from app.services.agents.state import new_state
 from app.services.jobs.repository import JobRepository
+from app.services.market.report_repository import MarketReportRepository
 from app.types.jobs import AgentPhase, AgentStep, JobStatus
+from app.utils.dates import today_jst
 
 logger = logging.getLogger(__name__)
 
@@ -159,12 +161,14 @@ class _ProgressTracker:
 
 async def _stream_graph(
     tracker: _ProgressTracker, kind: str, state: Any, config: Any
-) -> str:
-    """グラフを astream で実行し、進捗遷移を保存しながら回答を返す。"""
+) -> tuple[str, dict[str, str]]:
+    """グラフを astream で実行し、進捗遷移を保存しながら回答（と、あれば
+    カテゴリ/銘柄別レポート）を返す。"""
     graph = _GRAPHS.get(kind, orchestrator.graph)
     await tracker.begin()
 
     answer = ""
+    reports: dict[str, str] = {}
     async for chunk in graph.astream(state, config):
         for node_name, node_update in chunk.items():
             node = str(node_name)
@@ -176,7 +180,9 @@ async def _stream_graph(
             await tracker.complete(node, _summarize(node, update))
             if update.get("answer"):
                 answer = str(update["answer"])
-    return answer
+            if update.get("reports"):
+                reports = update["reports"]
+    return answer, reports
 
 
 async def run_agent_job(
@@ -186,8 +192,13 @@ async def run_agent_job(
     query: str,
     tickers: list[str] | None = None,
     categories: list[str] | None = None,
+    market_report_repo: MarketReportRepository | None = None,
 ) -> None:
-    """エージェントジョブをバックグラウンドで実行し、進捗・結果を保存する。"""
+    """エージェントジョブをバックグラウンドで実行し、進捗・結果を保存する。
+
+    kind="market" の場合、完了後にカテゴリ別レポートを本日分として
+    market_report_repo へ永続化する（issue #66。同日の再実行は上書き）。
+    """
     log = logging.LoggerAdapter(logger, {"job_id": job_id})
     state = new_state(query, tickers, categories)
     config = build_run_config(f"agent:{kind}")
@@ -195,12 +206,16 @@ async def run_agent_job(
     started = time.monotonic()
     await repo.update_status(job_id, JobStatus.RUNNING)
     try:
-        answer = await asyncio.wait_for(
+        answer, reports = await asyncio.wait_for(
             _stream_graph(tracker, kind, state, config), _AGENT_TIMEOUT
         )
         await repo.update_status(
             job_id, JobStatus.DONE, result=answer or "(回答が空でした)"
         )
+        if kind == "market" and market_report_repo is not None and reports:
+            report_date = today_jst().isoformat()
+            for category_id, content in reports.items():
+                await market_report_repo.upsert(category_id, report_date, content)
         log.info(
             "agent job completed (kind=%s, %.1fs)", kind, time.monotonic() - started
         )

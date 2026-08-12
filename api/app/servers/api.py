@@ -16,6 +16,7 @@ from app.services.chat.service import accept_message, run_chat_agent_job
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_refresh_job
 from app.services.market.fx import fetch_fx_quotes
+from app.services.market.report_repository import MarketReportRepository
 from app.services.portfolio.repository import HoldingsRepository
 from app.services.portfolio.service import PortfolioService
 from app.services.screener.history import fetch_candles_live_cached, synth_candles
@@ -33,6 +34,7 @@ from app.types.api import (
     HoldingRequest,
     ImportResult,
     MarketCategoryInfo,
+    MarketReport,
     ScreenerMeta,
     StockHistory,
     StockRow,
@@ -58,6 +60,7 @@ _watchlist_repo = WatchlistRepository(settings.db_path)
 _watchlist = WatchlistService(_watchlist_repo, _screener_repo)
 _holdings_repo = HoldingsRepository(settings.db_path)
 _portfolio = PortfolioService(_holdings_repo, _screener_repo)
+_market_report_repo = MarketReportRepository(settings.db_path)
 
 # イベントループはタスクへ弱参照しか持たないため、参照を保持しないと
 # 実行中のバックグラウンドタスクが GC で消え得る（Python 公式ドキュメントの注意）。
@@ -79,6 +82,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     await _chat_repo.initialize()
     await _watchlist_repo.initialize()
     await _holdings_repo.initialize()
+    await _market_report_repo.initialize()
     # mock モードかつキャッシュが空なら、合成データで即時シードする（開発用）。
     if settings.external_api_mode != "live" and await _screener_repo.count() == 0:
         logger.info("seeding screener snapshot with mock data")
@@ -351,6 +355,7 @@ async def create_agent_job(request: AgentJobRequest) -> CreateJobResponse:
             request.query,
             request.tickers,
             request.categories,
+            market_report_repo=_market_report_repo,
         )
     )
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
@@ -374,6 +379,27 @@ async def market_categories() -> list[MarketCategoryInfo]:
 async def market_fx() -> list[FxQuote]:
     """為替クオート一覧を返す（為替パネル表示用）。"""
     return await fetch_fx_quotes()
+
+
+@app.get(
+    "/api/v1/market/reports/{category_id}/dates", response_model=list[str]
+)
+async def market_report_dates(category_id: str) -> list[str]:
+    """レポートが保存されている日付一覧を新しい順に返す（issue #66。
+    カレンダーの非活性判定に使う）。"""
+    return await _market_report_repo.list_dates(category_id)
+
+
+@app.get("/api/v1/market/reports/{category_id}", response_model=MarketReport)
+async def market_report(category_id: str, date: str = Query(...)) -> MarketReport:
+    """指定日の保存済みレポートを返す（issue #66。Job不要・即時取得）。"""
+    report = await _market_report_repo.get(category_id, date)
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"report not found for category={category_id!r} date={date!r}",
+        )
+    return report
 
 
 # ---------------------------------------------------------------------------

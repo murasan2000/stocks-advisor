@@ -2,6 +2,7 @@ import {
   AlertCircle,
   ArrowDownRight,
   ArrowUpRight,
+  Calendar,
   ExternalLink,
   Link2,
   Minus,
@@ -16,7 +17,8 @@ import remarkGfm from 'remark-gfm'
 import { AgentProgress } from '../chat/AgentProgress'
 import type { CategoryReport, useMarket } from '../../hooks/useMarket'
 import { type EvidenceTarget, useEvidencePanel } from '../../hooks/useEvidencePanel'
-import { fmtNum, fmtPct } from '../../utils/format'
+import { fmtIsoDate, fmtNum, fmtPct, todayIso } from '../../utils/format'
+import { ReportCalendar } from './ReportCalendar'
 
 // リンクラベルの文字列だけを取り出す（**強調** 等でネストした要素が混ざる場合は
 // 単純に stringify すると "[object Object]" になるため、文字列の子要素のみ拾う）。
@@ -81,21 +83,29 @@ export function MarketPage({ market }: Props) {
     fx,
     fxLoading,
     openCategory,
+    viewingDate,
+    calendarOpen,
+    availableDates,
     reports,
+    reportKey,
     loadFx,
     toggleCategory,
-    fetchReport,
+    toggleCalendar,
+    viewDate,
+    generateReport,
   } = market
   const evidence = useEvidencePanel()
   const { close: closeEvidence } = evidence
   const openLabel = categories.find((c) => c.id === openCategory)?.label ?? ''
-  const openReport = openCategory ? reports[openCategory] : undefined
+  const openReport =
+    openCategory && viewingDate ? reports[reportKey(openCategory, viewingDate)] : undefined
+  const isViewingToday = viewingDate === todayIso()
 
-  // カテゴリの切替・折りたたみでレポート内容が変わったら、出典プレビューは
+  // カテゴリ・表示日付の切替でレポート内容が変わったら、出典プレビューは
   // 別のレポートの内容を指したまま孤立してしまうため閉じる。
   useEffect(() => {
     closeEvidence()
-  }, [openCategory, closeEvidence])
+  }, [openCategory, viewingDate, closeEvidence])
 
   return (
     <main className="screener-main">
@@ -113,20 +123,25 @@ export function MarketPage({ market }: Props) {
           ) : (
             <div className="category-grid">
               {categories.map((c) => {
-                const report = reports[c.id]
+                // カテゴリボックスの状態表示は、開いている間は実際に表示中の日付の
+                // 状態を、閉じている間は本日分の状態を反映する。
                 const isOpen = openCategory === c.id
+                const statusReport =
+                  isOpen && viewingDate
+                    ? reports[reportKey(c.id, viewingDate)]
+                    : reports[reportKey(c.id, todayIso())]
                 return (
                   <button
                     key={c.id}
                     type="button"
                     className={`category-box ${isOpen ? 'category-box--active' : ''}`}
-                    onClick={() => toggleCategory(c.id)}
+                    onClick={() => void toggleCategory(c.id)}
                   >
                     <span className="category-box-label">{c.label}</span>
                     <span className="category-box-status">
-                      {report?.loading
+                      {statusReport?.loading
                         ? '取得中…'
-                        : report?.error
+                        : statusReport?.error
                           ? '取得エラー'
                           : isOpen
                             ? '閉じる'
@@ -141,21 +156,50 @@ export function MarketPage({ market }: Props) {
           {openCategory ? (
             <div className="market-report-panel">
               <div className="market-report-header">
-                <h2>
-                  <TrendingUp size={15} />
-                  <span>{openLabel}</span>
-                </h2>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() => void fetchReport(openCategory)}
-                  disabled={openReport?.loading}
-                  aria-label={`${openLabel}のレポートを再取得`}
-                  title="再取得"
-                >
-                  <RefreshCw size={13} className={openReport?.loading ? 'spinning' : ''} />
-                </button>
+                <div className="market-report-heading">
+                  <h2>
+                    <TrendingUp size={15} />
+                    <span>{openLabel}</span>
+                  </h2>
+                  {viewingDate ? (
+                    <span className="market-report-date">
+                      {fmtIsoDate(viewingDate)}
+                      {isViewingToday ? '（本日）' : ''}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="market-report-actions">
+                  <button
+                    type="button"
+                    className={`icon-btn ${calendarOpen ? 'icon-btn--active' : ''}`}
+                    onClick={toggleCalendar}
+                    aria-label="過去のレポートをカレンダーから選ぶ"
+                    title="カレンダー"
+                  >
+                    <Calendar size={13} />
+                  </button>
+                  {isViewingToday ? (
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => void generateReport(openCategory)}
+                      disabled={openReport?.loading}
+                      aria-label={`${openLabel}のレポートを再実行`}
+                      title="再実行（本日分を上書き）"
+                    >
+                      <RefreshCw size={13} className={openReport?.loading ? 'spinning' : ''} />
+                    </button>
+                  ) : null}
+                </div>
               </div>
+              {calendarOpen ? (
+                <ReportCalendar
+                  availableDates={availableDates[openCategory] ?? []}
+                  selectedDate={viewingDate}
+                  onSelect={(date) => void viewDate(openCategory, date)}
+                  onClose={toggleCalendar}
+                />
+              ) : null}
               <MarketReport report={openReport} onOpenEvidence={evidence.open} />
             </div>
           ) : null}
