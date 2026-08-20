@@ -49,7 +49,6 @@ export default function App() {
     createAndAttachLabel,
     deleteLabel: deleteWatchlistLabel,
     toggleLabelFilter: toggleWatchlistLabelFilter,
-    clearLabelFilter: clearWatchlistLabelFilter,
   } = useWatchlist()
   const {
     holdings,
@@ -149,7 +148,6 @@ export default function App() {
           onCreateAndAttachLabel={createAndAttachLabel}
           onDeleteLabel={deleteWatchlistLabel}
           onToggleLabelFilter={toggleWatchlistLabelFilter}
-          onClearLabelFilter={clearWatchlistLabelFilter}
         />
       ) : view === 'portfolio' ? (
         <PortfolioPage

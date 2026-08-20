@@ -32,7 +32,6 @@ export function useWatchlist() {
     items: selectedLabelIds,
     toggle: toggleLabelFilter,
     remove: removeLabelFilter,
-    clear: clearLabelFilter,
   } = useToggleSet()
   // 同じコードへの連打で add/delete が競合しないよう、処理中のコードは無視する
   const pendingRef = useRef<Set<string>>(new Set())
@@ -239,6 +238,5 @@ export function useWatchlist() {
     createAndAttachLabel,
     deleteLabel,
     toggleLabelFilter,
-    clearLabelFilter,
   }
 }

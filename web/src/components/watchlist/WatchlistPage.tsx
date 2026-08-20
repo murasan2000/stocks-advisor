@@ -28,7 +28,6 @@ interface Props {
   onCreateAndAttachLabel: (code: string, name: string) => Promise<void>
   onDeleteLabel: (labelId: string) => void
   onToggleLabelFilter: (labelId: string) => void
-  onClearLabelFilter: () => void
 }
 
 // StockRow の中でソート対象になり得るキーのみ（比較可能な値を持つもの）
@@ -62,7 +61,6 @@ export function WatchlistPage({
   onCreateAndAttachLabel,
   onDeleteLabel,
   onToggleLabelFilter,
-  onClearLabelFilter,
 }: Props) {
   // 開いているチャートの銘柄コード集合（複数銘柄を同時に展開できる。
   // 行を再クリックすると畳む＝トグル。閉じるボタンは remove を使う）。
@@ -175,11 +173,6 @@ export function WatchlistPage({
               {l.name}
             </button>
           ))}
-          {selectedLabelIds.size > 0 ? (
-            <button type="button" className="label-filter-clear" onClick={onClearLabelFilter}>
-              クリア
-            </button>
-          ) : null}
         </div>
       ) : null}
 
