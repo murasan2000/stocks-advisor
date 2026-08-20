@@ -44,5 +44,9 @@ export function useToggleSet() {
     })
   }, [])
 
-  return { items, toggle, remove, prune }
+  const clear = useCallback(() => {
+    setItems((prev) => (prev.size === 0 ? prev : new Set()))
+  }, [])
+
+  return { items, toggle, remove, prune, clear }
 }

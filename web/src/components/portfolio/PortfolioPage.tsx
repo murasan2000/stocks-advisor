@@ -102,6 +102,7 @@ export function PortfolioPage({
       drop_from_high_pct: null,
       rebound_from_low_pct: null,
       score: 0,
+      labels: [],
     }
   }
 

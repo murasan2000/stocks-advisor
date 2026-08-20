@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.types.jobs import JobStatus
 
@@ -37,6 +37,18 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class Label(BaseModel):
+    """ウォッチリスト銘柄に付与する、ユーザー定義のラベル（issue #68）。
+
+    ラベルはグローバルに再利用可能（同じラベルを複数銘柄へ付与できる）。
+    StockRow に埋め込んで返す都合上、StockRow より前に定義する。
+    """
+
+    label_id: str
+    name: str
+    created_at: float
+
+
 # ---------------------------------------------------------------------------
 # スクリーナー（株式スクリーニング）
 # ---------------------------------------------------------------------------
@@ -64,6 +76,8 @@ class StockRow(BaseModel):
     drop_from_high_pct: float | None = None  # 5年高値からの下落率（%, 正値）
     rebound_from_low_pct: float | None = None  # 1年安値からの反発率（%, 正値）
     score: int = 0  # 総合スコア（0〜100）
+    # 付与済みラベル（ウォッチリストのみで使用。スクリーナー結果では常に空、issue #68）
+    labels: list[Label] = Field(default_factory=list)
 
 
 class ScreenerSummary(BaseModel):
@@ -187,3 +201,21 @@ class MarketReport(BaseModel):
     content: str
     created_at: float
     updated_at: float
+
+
+# ---------------------------------------------------------------------------
+# ウォッチリスト（ラベル）
+# ---------------------------------------------------------------------------
+
+
+class LabelCreateRequest(BaseModel):
+    """ラベルの新規作成リクエスト。
+
+    同名のラベルが既にあれば新規作成せず既存を返す（冪等、Label.create() 参照）。
+    strip_whitespace=True により前後の空白を除いてから min_length を検証するため、
+    空白のみの name（例: " "）は 422 で弾かれる（除去後に空文字列になるため）。
+    """
+
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)
+    ]

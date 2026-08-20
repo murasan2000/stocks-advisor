@@ -1,9 +1,11 @@
-import { Plus } from 'lucide-react'
+import { Plus, Tag } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { MarketSection } from '../common/MarketSection'
 import { StockTable } from '../screener/StockTable'
+import { LabelBadges } from './LabelBadges'
+import { LabelPicker } from './LabelPicker'
 import { StockDetail } from './StockDetail'
-import type { StockRow } from '../../types/api'
+import type { Label, StockRow } from '../../types/api'
 import { isJpCode } from '../../utils/format'
 import { useSortState } from '../../hooks/useSortState'
 import { useToggleSet } from '../../hooks/useToggleSet'
@@ -18,6 +20,15 @@ interface Props {
   onToggleSelect: (code: string) => void
   // 銘柄コード直接入力での追加（日本株コード・米国株ティッカーどちらも可）
   onAdd: (code: string) => Promise<void>
+  // ラベル（issue #68）。並び順ではなく絞り込み用のタグとして扱う。
+  labels: Label[]
+  selectedLabelIds: Set<string>
+  onAttachLabel: (code: string, label: Label) => void
+  onDetachLabel: (code: string, labelId: string) => void
+  onCreateAndAttachLabel: (code: string, name: string) => Promise<void>
+  onDeleteLabel: (labelId: string) => void
+  onToggleLabelFilter: (labelId: string) => void
+  onClearLabelFilter: () => void
 }
 
 // StockRow の中でソート対象になり得るキーのみ（比較可能な値を持つもの）
@@ -44,6 +55,14 @@ export function WatchlistPage({
   selected,
   onToggleSelect,
   onAdd,
+  labels,
+  selectedLabelIds,
+  onAttachLabel,
+  onDetachLabel,
+  onCreateAndAttachLabel,
+  onDeleteLabel,
+  onToggleLabelFilter,
+  onClearLabelFilter,
 }: Props) {
   // 開いているチャートの銘柄コード集合（複数銘柄を同時に展開できる。
   // 行を再クリックすると畳む＝トグル。閉じるボタンは remove を使う）。
@@ -58,13 +77,26 @@ export function WatchlistPage({
   const [addCode, setAddCode] = useState('')
   const [addBusy, setAddBusy] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  // ラベルを追加/変更中の銘柄コード（LabelPicker モーダルの開閉状態を兼ねる）
+  const [labelPickerCode, setLabelPickerCode] = useState<string | null>(null)
+
+  // ラベル絞り込みは並び順に影響しない独立した軸（issue #68）。
+  // 複数選択時はOR条件（選択したラベルのいずれかを持つ銘柄を表示）。
+  const filteredRows = useMemo(() => {
+    if (selectedLabelIds.size === 0) return rows
+    return rows.filter((r) => r.labels.some((l) => selectedLabelIds.has(l.label_id)))
+  }, [rows, selectedLabelIds])
 
   // 円建て（日本株）とドル建て（米国株）で通貨が異なるため、表示テーブル・ソート
   // 状態をそれぞれ独立させる（片方の並べ替えがもう片方に影響しないように）。
-  const jpRowsRaw = useMemo(() => rows.filter((r) => isJpCode(r.code)), [rows])
-  const usRowsRaw = useMemo(() => rows.filter((r) => !isJpCode(r.code)), [rows])
+  const jpRowsRaw = useMemo(() => filteredRows.filter((r) => isJpCode(r.code)), [filteredRows])
+  const usRowsRaw = useMemo(() => filteredRows.filter((r) => !isJpCode(r.code)), [filteredRows])
   const jp = useSortState(jpRowsRaw, compare, 'code', false)
   const us = useSortState(usRowsRaw, compare, 'code', false)
+
+  const labelPickerRow = labelPickerCode
+    ? rows.find((r) => r.code === labelPickerCode)
+    : undefined
 
   const renderDetail = (code: string) => (
     <StockDetail
@@ -130,18 +162,45 @@ export function WatchlistPage({
         </form>
       ) : null}
 
+      {labels.length > 0 ? (
+        <div className="label-filter-bar">
+          <Tag size={13} className="label-filter-icon" />
+          {labels.map((l) => (
+            <button
+              key={l.label_id}
+              type="button"
+              className={`label-chip ${selectedLabelIds.has(l.label_id) ? 'label-chip--active' : ''}`}
+              onClick={() => onToggleLabelFilter(l.label_id)}
+            >
+              {l.name}
+            </button>
+          ))}
+          {selectedLabelIds.size > 0 ? (
+            <button type="button" className="label-filter-clear" onClick={onClearLabelFilter}>
+              クリア
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="loading-bar">
           <span />
         </div>
       ) : null}
 
-      {!loading && rows.length === 0 ? (
+      {!loading && filteredRows.length === 0 ? (
         <div className="table-empty watchlist-empty">
-          まだウォッチリストに銘柄が登録されていません。
-          <br />
-          スクリーニング画面の★マーク、または上の「銘柄を追加」から登録してください
-          （米国株は上のフォームからティッカーを直接入力してください）。
+          {rows.length === 0 ? (
+            <>
+              まだウォッチリストに銘柄が登録されていません。
+              <br />
+              スクリーニング画面の★マーク、または上の「銘柄を追加」から登録してください
+              （米国株は上のフォームからティッカーを直接入力してください）。
+            </>
+          ) : (
+            '選択したラベルに一致する銘柄がありません。'
+          )}
         </div>
       ) : (
         <>
@@ -159,6 +218,9 @@ export function WatchlistPage({
               renderDetail={renderDetail}
               selected={selected}
               onToggleSelect={onToggleSelect}
+              renderLabels={(row) => (
+                <LabelBadges row={row} onOpenPicker={setLabelPickerCode} onDetach={onDetachLabel} />
+              )}
             />
           </MarketSection>
           <MarketSection label="米国株" count={us.sorted.length}>
@@ -175,10 +237,27 @@ export function WatchlistPage({
               renderDetail={renderDetail}
               selected={selected}
               onToggleSelect={onToggleSelect}
+              renderLabels={(row) => (
+                <LabelBadges row={row} onOpenPicker={setLabelPickerCode} onDetach={onDetachLabel} />
+              )}
             />
           </MarketSection>
         </>
       )}
+
+      {labelPickerRow ? (
+        <LabelPicker
+          code={labelPickerRow.code}
+          stockName={labelPickerRow.name}
+          attachedIds={new Set(labelPickerRow.labels.map((l) => l.label_id))}
+          allLabels={labels}
+          onAttach={onAttachLabel}
+          onDetach={onDetachLabel}
+          onCreateAndAttach={onCreateAndAttachLabel}
+          onDeleteLabel={onDeleteLabel}
+          onClose={() => setLabelPickerCode(null)}
+        />
+      ) : null}
     </main>
   )
 }
