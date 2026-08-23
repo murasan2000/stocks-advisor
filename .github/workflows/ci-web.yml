@@ -1,0 +1,49 @@
+# フロントエンド（web/）のCI。役割・分割理由は ci-api.yml のコメントを参照。
+name: CI (web)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/ci-web.yml'
+  pull_request:
+    paths:
+      - 'web/**'
+      - '.github/workflows/ci-web.yml'
+
+concurrency:
+  group: ci-web-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # npm install ではなく npm ci。package-lock.json のとおりに厳密復元し、
+      # lock を書き換えない（CIでの再現性を担保する）。
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (eslint)
+        run: npm run lint
+
+      # tsc -b で型チェックも兼ねる（package.json の build スクリプト）。
+      - name: Build (tsc + vite)
+        run: npm run build

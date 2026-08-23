@@ -1,0 +1,66 @@
+# バックエンド（api/）のCI。
+#
+# ローカルの Claude Code CLI が実装・push し、その変更を「Claude 抜きで」機械的に
+# 再現検証するのがこのワークフローの役割。ローカルでの検証結果に依存せず、
+# クリーンな Hosted Runner 上で lint → 型チェック → テストを通す。
+#
+# パスフィルタにより api/ を触っていない PR では起動しない（Runner 時間の節約）。
+# なお api/ と web/ でワークフローを分けているのは、GitHub Actions の paths フィルタが
+# ジョブ単位ではなくワークフロー単位でしか書けないため。
+name: CI (api)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - '.github/workflows/ci-api.yml'
+  pull_request:
+    paths:
+      - 'api/**'
+      - '.github/workflows/ci-api.yml'
+
+# 同一ブランチで新しい push があれば、進行中の古い実行を打ち切る。
+concurrency:
+  group: ci-api-${{ github.ref }}
+  cancel-in-progress: true
+
+# 既定の GITHUB_TOKEN を読み取り専用に絞る（最小権限）。
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: api
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      # settings.py の既定は "live"。CI が外部API（yfinance/EDINET等）へ出ないよう
+      # mock を明示する。テスト側でも mock を指定しているが、多層で担保する。
+      EXTERNAL_API_MODE: mock
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          python-version: '3.13'
+          enable-cache: true
+          cache-dependency-glob: api/uv.lock
+
+      # --locked は uv.lock が pyproject.toml と整合しているかも同時に検証する。
+      # 依存を足したのに lock を更新し忘れた場合、ここで落ちる。
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Lint (ruff)
+        run: uv run ruff check app/ tests/
+
+      - name: Type check (mypy strict)
+        run: uv run mypy app/
+
+      - name: Test (pytest)
+        run: uv run pytest -q

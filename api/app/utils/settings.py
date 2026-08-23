@@ -26,14 +26,15 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
 
     # Database
-    # db/ はリポジトリ直下の独立コンポーネント（将来 Aurora 等の DB サービスに置換予定）。
+    # db/ はリポジトリ直下の独立コンポーネント
+    # （将来 Aurora 等の DB サービスに置換予定）。
     # 開発時は api/ から起動するため "../db/" を参照する。
     # コンテナでは DB_PATH=/app/db/stock_advisor.db を環境変数で上書きする。
     db_path: str = "../db/stock_advisor.db"
 
     # External API
-    # "mock": 決定論的な合成データを使用（既定・オフライン可）
-    # "live": yfinance 実データ（到達不可時は合成へ自動フォールバック）
+    # "mock": 決定論的な合成データを使用（オフライン可。開発・テスト・CI 向け）
+    # "live": yfinance 実データ（既定。到達不可時は合成へ自動フォールバック）
     external_api_mode: str = "live"
     mock_data_dir: str = "../data/mock"
 
