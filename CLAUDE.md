@@ -92,9 +92,12 @@ npm run dev     # 開発サーバ（:5173、/api を :8000 にプロキシ）
 5. **CI 検証**: PR をトリガーに GitHub Actions が独立して同じ検証を実行する。
 6. **修正**: CI が落ちたらローカルで直して push し直す。
 
-- ブランチは `feature/<topic>`（Claude.ai セッションからは `claude/<topic>` を使うことがある）。
-  どちらも PR 経由で CI が回るので、運用上の差はない。
-- コミット / PR は指示があった時のみ。
+- **ブランチ運用・commit/push・コミットメッセージ規約は `git-workflow` skill に従う**
+  （`.claude/skills/git-workflow/SKILL.md`）。要点: 作業前に必ず `claude/feature/<topic>`
+  ブランチを切る、作業が一区切りついたら指示を待たずに commit + push まで行う
+  （セッション切断による作業消失を防ぐため）、コミットメッセージは
+  `<prefix>-<action>(#issue): <context>` 形式にする。
+- PR 作成は指示があった時のみ。
 - **CI はローカル検証を省く理由にはしない**。CI の役割は「Claude が自分の変更を
   甘く判定していないか」を機械的に潰すことなので、両方通るのが正常な状態。
 - **自己レビュー必須**: 実装が一段落したら、ユーザーのレビューに回す前に
