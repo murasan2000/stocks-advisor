@@ -48,6 +48,8 @@ interface Props {
   // renderDetail の内容を挿入する（複数銘柄を同時に開ける）。
   openCodes?: Set<string>
   renderDetail?: (code: string) => ReactNode
+  // 銘柄名の下にラベルバッジ等を差し込む任意スロット（ウォッチリスト画面のみで使用）
+  renderLabels?: (row: StockRow) => ReactNode
 }
 
 function scoreColor(score: number): string {
@@ -69,6 +71,7 @@ export function StockTable({
   onRowClick,
   openCodes,
   renderDetail,
+  renderLabels,
 }: Props) {
   const showSelectCol = onToggleSelect != null
   // 詳細行の colSpan は実際のヘッダー列数と一致させる必要がある:
@@ -147,9 +150,12 @@ export function StockTable({
                 </td>
                 <td className="code">{s.code}</td>
                 <td>
-                  <div className="name-cell">
-                    <span className="name">{s.name}</span>
-                    <span className="market-tag">{s.market}</span>
+                  <div className="name-wrap">
+                    <div className="name-cell">
+                      <span className="name">{s.name}</span>
+                      <span className="market-tag">{s.market}</span>
+                    </div>
+                    {renderLabels ? renderLabels(s) : null}
                   </div>
                 </td>
                 <td className="right strong">{fmtPriceByCode(s.code, s.price)}</td>

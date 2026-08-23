@@ -8,6 +8,7 @@ import type {
   Holding,
   ImportResult,
   Job,
+  Label,
   MarketCategoryInfo,
   MarketReport,
   ScreenerMeta,
@@ -109,6 +110,45 @@ export function getStockHistory(
   return request<StockHistory>(
     `/stocks/${encodeURIComponent(code)}/history?period=${period}`,
   )
+}
+
+// ───────────────────────────────────────────────
+// ラベル（ウォッチリスト銘柄への自由付与タグ、issue #68）
+// ───────────────────────────────────────────────
+
+export function getLabels(): Promise<Label[]> {
+  return request<Label[]>('/labels')
+}
+
+export function createLabel(name: string): Promise<Label> {
+  return request<Label>('/labels', { method: 'POST', body: JSON.stringify({ name }) })
+}
+
+// レスポンスボディが空のため request()（.json() 呼び出し）は使わない。
+export function deleteLabel(labelId: string): Promise<void> {
+  return fetch(`${BASE_URL}/labels/${encodeURIComponent(labelId)}`, {
+    method: 'DELETE',
+  }).then((res) => {
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+  })
+}
+
+export function attachLabel(code: string, labelId: string): Promise<void> {
+  return fetch(
+    `${BASE_URL}/watchlist/${encodeURIComponent(code)}/labels/${encodeURIComponent(labelId)}`,
+    { method: 'POST' },
+  ).then((res) => {
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+  })
+}
+
+export function detachLabel(code: string, labelId: string): Promise<void> {
+  return fetch(
+    `${BASE_URL}/watchlist/${encodeURIComponent(code)}/labels/${encodeURIComponent(labelId)}`,
+    { method: 'DELETE' },
+  ).then((res) => {
+    if (!res.ok) throw new Error(`API error ${res.status}`)
+  })
 }
 
 // ───────────────────────────────────────────────

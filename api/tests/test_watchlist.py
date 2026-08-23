@@ -9,6 +9,7 @@ import pytest
 from app.services.screener import us_quote
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
+from app.services.watchlist.labels_repository import LabelsRepository
 from app.services.watchlist.repository import WatchlistRepository
 from app.services.watchlist.service import WatchlistService
 from app.types.api import StockRow
@@ -28,7 +29,9 @@ async def watchlist(
 
     wl_repo = WatchlistRepository(db_path)
     await wl_repo.initialize()
-    return WatchlistService(wl_repo, screener_repo), screener
+    labels_repo = LabelsRepository(db_path)
+    await labels_repo.initialize()
+    return WatchlistService(wl_repo, screener_repo, labels_repo), screener
 
 
 async def _first_code(screener: ScreenerService) -> str:
@@ -201,3 +204,43 @@ async def test_list_codes_ordered_newest_first(
 
     await wl.remove("2222")
     assert await wl.list_codes() == ["1111"]
+
+
+async def test_list_rows_labels_empty_when_none_attached(
+    watchlist: tuple[WatchlistService, ScreenerService],
+) -> None:
+    wl, screener = watchlist
+    code = await _first_code(screener)
+    await wl.add(code)
+    rows = await wl.list_rows()
+    assert rows[0].labels == []
+
+
+async def test_list_rows_includes_attached_labels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ラベルが付与された銘柄は StockRow.labels に含まれることを確認する（issue #68）。
+
+    labels_repo への直接アクセスが必要なため、共通の watchlist フィクスチャは
+    使わずこのテスト専用にセットアップする。
+    """
+    monkeypatch.setattr(settings, "external_api_mode", "mock")
+    db_path = str(tmp_path / "app.db")
+    screener_repo = ScreenerRepository(db_path)
+    await screener_repo.initialize()
+    screener = ScreenerService(screener_repo)
+    await screener.refresh()
+    wl_repo = WatchlistRepository(db_path)
+    await wl_repo.initialize()
+    labels_repo = LabelsRepository(db_path)
+    await labels_repo.initialize()
+    wl = WatchlistService(wl_repo, screener_repo, labels_repo)
+
+    code = await _first_code(screener)
+    await wl.add(code)
+    label = await labels_repo.create("半導体")
+    await labels_repo.attach(code, label.label_id)
+
+    rows = await wl.list_rows()
+    assert len(rows) == 1
+    assert [label.name for label in rows[0].labels] == ["半導体"]

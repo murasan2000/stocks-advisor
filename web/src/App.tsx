@@ -41,6 +41,14 @@ export default function App() {
     loadRows: loadWatchlistRows,
     add: addWatch,
     toggle: toggleWatch,
+    labels: watchlistLabels,
+    selectedLabelIds: selectedWatchlistLabelIds,
+    loadLabels: loadWatchlistLabels,
+    attachLabelToCode,
+    detachLabelFromCode,
+    createAndAttachLabel,
+    deleteLabel: deleteWatchlistLabel,
+    toggleLabelFilter: toggleWatchlistLabelFilter,
   } = useWatchlist()
   const {
     holdings,
@@ -65,14 +73,17 @@ export default function App() {
   const handleChangeView = useCallback(
     (next: View) => {
       setView(next)
-      if (next === 'watchlist') void loadWatchlistRows()
+      if (next === 'watchlist') {
+        void loadWatchlistRows()
+        void loadWatchlistLabels()
+      }
       if (next === 'portfolio') void loadHoldings()
       if (next === 'market') {
         void loadMarketCategories()
         void loadMarketFx()
       }
     },
-    [loadWatchlistRows, loadHoldings, loadMarketCategories, loadMarketFx],
+    [loadWatchlistRows, loadWatchlistLabels, loadHoldings, loadMarketCategories, loadMarketFx],
   )
 
   // 検索語の反映。関数更新にして恒常的に同一 identity を保ち、
@@ -130,6 +141,13 @@ export default function App() {
           selected={selected}
           onToggleSelect={toggleSelect}
           onAdd={addWatch}
+          labels={watchlistLabels}
+          selectedLabelIds={selectedWatchlistLabelIds}
+          onAttachLabel={attachLabelToCode}
+          onDetachLabel={detachLabelFromCode}
+          onCreateAndAttachLabel={createAndAttachLabel}
+          onDeleteLabel={deleteWatchlistLabel}
+          onToggleLabelFilter={toggleWatchlistLabelFilter}
         />
       ) : view === 'portfolio' ? (
         <PortfolioPage

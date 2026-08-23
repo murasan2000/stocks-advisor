@@ -80,6 +80,13 @@ export interface SendMessageResponse {
 // スクリーナー
 // ───────────────────────────────────────────────
 
+// ウォッチリスト銘柄に付与する、ユーザー定義のラベル（issue #68）
+export interface Label {
+  label_id: string
+  name: string
+  created_at: number
+}
+
 export interface StockRow {
   code: string
   symbol: string
@@ -99,6 +106,8 @@ export interface StockRow {
   drop_from_high_pct: number | null
   rebound_from_low_pct: number | null
   score: number
+  // 付与済みラベル（ウォッチリストのみで使用。スクリーナー結果では常に空、issue #68）
+  labels: Label[]
 }
 
 export interface ScreenerSummary {

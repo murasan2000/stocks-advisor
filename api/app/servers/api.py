@@ -22,6 +22,7 @@ from app.services.portfolio.service import PortfolioService
 from app.services.screener.history import fetch_candles_live_cached, synth_candles
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
+from app.services.watchlist.labels_repository import LabelsRepository
 from app.services.watchlist.repository import WatchlistRepository
 from app.services.watchlist.service import WatchlistService
 from app.types.api import (
@@ -33,6 +34,8 @@ from app.types.api import (
     Holding,
     HoldingRequest,
     ImportResult,
+    Label,
+    LabelCreateRequest,
     MarketCategoryInfo,
     MarketReport,
     ScreenerMeta,
@@ -57,7 +60,8 @@ _screener_repo = ScreenerRepository(settings.db_path)
 _screener = ScreenerService(_screener_repo)
 _chat_repo = ChatRepository(settings.db_path)
 _watchlist_repo = WatchlistRepository(settings.db_path)
-_watchlist = WatchlistService(_watchlist_repo, _screener_repo)
+_labels_repo = LabelsRepository(settings.db_path)
+_watchlist = WatchlistService(_watchlist_repo, _screener_repo, _labels_repo)
 _holdings_repo = HoldingsRepository(settings.db_path)
 _portfolio = PortfolioService(_holdings_repo, _screener_repo)
 _market_report_repo = MarketReportRepository(settings.db_path)
@@ -81,6 +85,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     await _screener_repo.initialize()
     await _chat_repo.initialize()
     await _watchlist_repo.initialize()
+    await _labels_repo.initialize()
     await _holdings_repo.initialize()
     await _market_report_repo.initialize()
     # mock モードかつキャッシュが空なら、合成データで即時シードする（開発用）。
@@ -197,6 +202,44 @@ async def watchlist_add(code: str) -> Response:
 async def watchlist_remove(code: str) -> Response:
     """解除する（未登録でもエラーにしない）。"""
     await _watchlist.remove(code)
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# ラベル（ウォッチリスト銘柄への自由付与タグ、issue #68）
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/labels", response_model=list[Label])
+async def labels_list() -> list[Label]:
+    """全ラベルを名前順で返す（絞り込みチップ・付与候補一覧用）。"""
+    return await _labels_repo.list_all()
+
+
+@app.post("/api/v1/labels", response_model=Label)
+async def labels_create(request: LabelCreateRequest) -> Label:
+    """新規作成する（冪等。同名が既にあれば新規作成せず既存を返す）。"""
+    return await _labels_repo.create(request.name)
+
+
+@app.delete("/api/v1/labels/{label_id}", status_code=204)
+async def labels_delete(label_id: str) -> Response:
+    """ラベル自体を削除する（全銘柄からの付与も連鎖して解除）。"""
+    await _labels_repo.delete(label_id)
+    return Response(status_code=204)
+
+
+@app.post("/api/v1/watchlist/{code}/labels/{label_id}", status_code=200)
+async def watchlist_label_attach(code: str, label_id: str) -> Response:
+    """銘柄にラベルを付与する（冪等）。"""
+    await _labels_repo.attach(code, label_id)
+    return Response(status_code=200)
+
+
+@app.delete("/api/v1/watchlist/{code}/labels/{label_id}", status_code=204)
+async def watchlist_label_detach(code: str, label_id: str) -> Response:
+    """銘柄からラベルを解除する（未付与でもエラーにしない）。"""
+    await _labels_repo.detach(code, label_id)
     return Response(status_code=204)
 
 
