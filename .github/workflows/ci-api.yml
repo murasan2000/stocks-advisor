@@ -44,8 +44,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # setup-uv は actions/* と違い移動メジャータグ（@v10）を公開していないため、
+      # 完全なバージョンタグで固定する（@v10 を指定すると解決に失敗し startup_failure になる）。
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           python-version: '3.13'
           enable-cache: true
