@@ -31,18 +31,18 @@ git switch -c claude/feature/<topic>
 ## 3. コミットメッセージ規約
 
 ```
-<prefix>-<action>(#issue): <context>
+<action>(<prefix>): <context>
 ```
 
-- `prefix`: 変更領域。`api` / `web` / `doc` / `infra` など。
+- `prefix`: 変更領域。`api` / `web` / `doc` / `infra` / `ci` / `cd` / `test` など。
 - `action`: 変更種別。`add`（新規追加）/ `fix`（修正）/ `bug`（バグ修正）/
   `refactor`（リファクタ）など。
-- `issue`: 関連 Issue 番号。紐づく Issue が無い場合は `(#issue)` ごと省略してよい。
 - `context`: 何を変更したかが後から読んで分かる説明（日本語可）。多少長くても
   タスク・スコープが伝わることを優先する。
 
 例:
-- `api-add(#1): 一覧取得API追加`
-- `web-fix(#54): タイムアウト問題を修正`
-- `doc-fix(#89): 構築手順書修正`
-- `infra-bug(#100): パブリック公開のリソースを閉域に`
+
+- `add(api): 一覧取得API追加`
+- `fix(web): タイムアウト問題を修正`
+- `fix(doc): 構築手順書修正`
+- `bug(infra): パブリック公開のリソースを閉域に`

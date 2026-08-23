@@ -23,6 +23,7 @@ db/     SQLite（.gitignore 対象）
 ## 開発コマンド
 
 バックエンド（`api/` で実行）:
+
 ```bash
 uv run python -m app.servers.api   # 起動（http://localhost:8000）
 uv run pytest -q                   # テスト（mock でネットワーク非依存）
@@ -31,6 +32,7 @@ uv run mypy app/                   # 型チェック（strict）
 ```
 
 フロントエンド（`web/` で実行）:
+
 ```bash
 npm run build   # tsc + vite build
 npm run lint    # eslint
@@ -96,7 +98,7 @@ npm run dev     # 開発サーバ（:5173、/api を :8000 にプロキシ）
   （`.claude/skills/git-workflow/SKILL.md`）。要点: 作業前に必ず `claude/feature/<topic>`
   ブランチを切る、作業が一区切りついたら指示を待たずに commit + push まで行う
   （セッション切断による作業消失を防ぐため）、コミットメッセージは
-  `<prefix>-<action>(#issue): <context>` 形式にする。
+  `<action>(<prefix>): <context>` 形式にする。
 - PR 作成は指示があった時のみ。
 - **CI はローカル検証を省く理由にはしない**。CI の役割は「Claude が自分の変更を
   甘く判定していないか」を機械的に潰すことなので、両方通るのが正常な状態。
