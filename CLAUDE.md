@@ -16,11 +16,14 @@ api/    FastAPI バックエンド（Python 3.13 / uv）
   app/types/                    Pydantic / TypedDict の型定義
 web/    React + TypeScript + Vite フロントエンド
 db/     SQLite（.gitignore 対象）
+.github/workflows/  CI（api / web で分割。詳細は「CI」節）
+.claude/            権限・フックのガードレール（詳細は「ガードレール」節）
 ```
 
 ## 開発コマンド
 
 バックエンド（`api/` で実行）:
+
 ```bash
 uv run python -m app.servers.api   # 起動（http://localhost:8000）
 uv run pytest -q                   # テスト（mock でネットワーク非依存）
@@ -29,6 +32,7 @@ uv run mypy app/                   # 型チェック（strict）
 ```
 
 フロントエンド（`web/` で実行）:
+
 ```bash
 npm run build   # tsc + vite build
 npm run lint    # eslint
@@ -78,9 +82,60 @@ npm run dev     # 開発サーバ（:5173、/api を :8000 にプロキシ）
 - **Prompt/応答の詳細トレースは Langfuse が正**（callback を親→子へ伝播）。
   アプリログは概況（所要時間・文字数・job_id）に留める。
 
-## Git / PR ワークフロー
+## 開発フロー（ローカル主体）
 
-- 作業ブランチ: `claude/market-agent-mvp-s9yhk6`（マージ済みなら `main` から作り直す）。
-- コミット/PR は指示があった時のみ。PR は draft で作成し、Issue を `Refs #N` で紐付ける。
+実装はローカルの Claude Code CLI が担い、検証は GitHub Actions が Claude 抜きで
+再現する、という役割分担を取る。Claude.ai の Code 機能からの指示も引き続き可能。
+
+1. **Issue 作成**: `gh issue create`、または GitHub 上で直接。
+2. **実装**: ローカル CLI が Issue を読み、この CLAUDE.md の規約に従って実装する。
+3. **ローカル検証**: 下記「開発コマンド」の lint / 型チェック / テストを通す。
+4. **push & PR**: `gh pr create` で draft PR を作成し、Issue を `Refs #N` で紐付ける。
+5. **CI 検証**: PR をトリガーに GitHub Actions が独立して同じ検証を実行する。
+6. **修正**: CI が落ちたらローカルで直して push し直す。
+
+- **ブランチ運用・commit/push・コミットメッセージ規約は `git-workflow` skill に従う**
+  （`.claude/skills/git-workflow/SKILL.md`）。要点: 作業前に必ず `claude/feature/<topic>`
+  ブランチを切る、作業が一区切りついたら指示を待たずに commit + push まで行う
+  （セッション切断による作業消失を防ぐため）、コミットメッセージは
+  `<action>(<prefix>): <context>` 形式にする。
+- PR 作成は指示があった時のみ。
+- **CI はローカル検証を省く理由にはしない**。CI の役割は「Claude が自分の変更を
+  甘く判定していないか」を機械的に潰すことなので、両方通るのが正常な状態。
 - **自己レビュー必須**: 実装が一段落したら、ユーザーのレビューに回す前に
-  `/code-review` でself-review を行い、指摘を検証・修正してから PR を提出する。
+  `/code-review` で self-review を行い、指摘を検証・修正してから PR を提出する。
+
+## CI
+
+`.github/workflows/` に `ci-api.yml` / `ci-web.yml` の 2 本。`main` への push と
+全 PR がトリガー。実行内容はローカルの検証コマンドと同一。
+
+- **2 本に分けている理由**: GitHub Actions の `paths` フィルタはジョブ単位では書けず
+  ワークフロー単位でしか指定できないため。`api/` だけの変更で web の CI は動かない。
+- **注意**: パスフィルタで実行されなかったワークフローは「成功」ではなく「未実行」に
+  なる。将来ブランチ保護の必須チェックに設定する場合は、この挙動を踏まえること。
+- CI 結果の確認: `gh run list --branch <branch>` / `gh run view <run-id> --log-failed`。
+- **既定の `GITHUB_TOKEN` で push したコミットは CI をトリガーしない**（GitHub の
+  無限ループ防止仕様）。ローカルの通常の git / gh 認証で push する限り影響はないが、
+  将来 CI 側から push する仕組みを足す場合はこの制約に注意する。
+
+## ガードレール（.claude/）
+
+`settings.json` の permissions と、`hooks/guard-bash.py`（PreToolUse フック）で構成。
+settings.json は厳密 JSON でコメントを書けないため、意図はここに記す。
+
+- **allow**: テスト・lint・ビルド・読み取り系の git / gh など、日常的で安全なもの。
+- **ask**: 外向きの操作（`git push`、`gh pr create` 等）、依存の増減（`uv add` 等）、
+  および CI 定義・ガードレール自身の編集。
+- **deny**: `.env` 系の読み書き、ロックファイルの直接編集、`gh secret`、force push。
+- パスを対象にする権限ルールは **`Edit(...)` / `Read(...)` のみが参照される**。
+  `Write(...)` で書いてもルールは無視され、起動時に警告が出るので使わないこと。
+- **`ask` は毎回確認が出る**。権限プロンプトで「今後は確認しない」を選んでも、それは
+  `settings.local.json` の allow として保存されるだけで、project 側の `ask` を上書き
+  できない。確認が煩わしくなった項目は、この `settings.json` から外して調整する。
+- **フックの担当範囲**: permissions のパターンで表現しにくいものだけ。具体的には
+  フラグの書き方が複数ある force push・再帰 rm と、パスの種類で可否が変わるもの。
+  `rm -rf node_modules` のようなプロジェクト内の後片付けは通し、絶対パス・ホーム・
+  親ディレクトリ遡りへの再帰削除だけを止める（このため `rm` の一律 deny は置かない）。
+- シェル経由の `.env` 読み取りやリダイレクト書き込みは Edit ルールの検査対象外なので、
+  フック側で塞いでいる。
