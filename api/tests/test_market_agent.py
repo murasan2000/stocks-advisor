@@ -37,7 +37,7 @@ def _clear_cache() -> None:
 
 def test_market_categories_catalog_has_expected_ids() -> None:
     known = {c["id"] for c in market.MARKET_CATEGORIES}
-    assert known == {"jp_stocks", "us_stocks"}
+    assert known == {"jp_stocks", "us_stocks", "fx", "semiconductor"}
 
 
 async def test_market_agent_reports_requested_category(
@@ -51,6 +51,19 @@ async def test_market_agent_reports_requested_category(
     assert "米国株市況" not in answer  # 未指定カテゴリは含めない
 
 
+async def test_market_agent_reports_new_categories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """新規追加カテゴリ（為替・半導体セクター）も既存パイプラインで解決できる。"""
+    monkeypatch.setattr(market, "invoke_llm", _fake_llm)
+    monkeypatch.setattr(market, "search_web", _no_search)
+
+    answer = await market.run(categories=["fx", "semiconductor"])
+    assert "# 為替市況" in answer
+    assert "# 半導体セクター" in answer
+    assert "# 日本株市況" not in answer  # 未指定カテゴリは含めない
+
+
 async def test_market_agent_defaults_to_all_categories_when_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -60,6 +73,8 @@ async def test_market_agent_defaults_to_all_categories_when_unknown(
     # 未知のカテゴリIDのみ指定した場合は全カテゴリにフォールバックする
     answer = await market.run(categories=["unknown"])
     assert "# 日本株市況" in answer
+    assert "# 為替市況" in answer
+    assert "# 半導体セクター" in answer
     assert "# 米国株市況" in answer
 
 
