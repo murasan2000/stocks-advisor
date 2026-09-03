@@ -11,6 +11,7 @@ import {
 const DEBOUNCE_MS = 250
 const POLL_MS = 1500
 const MAX_POLLS = 1200 // 最大30分（全銘柄ライブ更新を想定）
+const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000 // 24時間: これを超えて古いスナップショットは自動更新する
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -29,6 +30,7 @@ export function useScreener() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const runId = useRef(0)
+  const autoRefreshTriggered = useRef(false) // マウント後の自動更新判定を1回だけ行うためのフラグ
 
   const load = useCallback(async (f: Filters) => {
     const myRun = ++runId.current
@@ -87,6 +89,21 @@ export function useScreener() {
       setRefreshing(false)
     }
   }, [filters, load])
+
+  // マウント後、meta が取得できた時点で最終更新の鮮度を1回だけ判定し、
+  // 古ければ自動でスナップショット更新を発火する（以後 meta が変わっても再判定しない）。
+  useEffect(() => {
+    if (autoRefreshTriggered.current || meta === null) return
+    autoRefreshTriggered.current = true
+    const isStale =
+      meta.last_refresh === null || Date.now() - meta.last_refresh * 1000 > STALE_THRESHOLD_MS
+    if (!isStale) return
+    // effect内で直接setStateを呼ばないよう、refresh()の起動は次のタスクにずらす。
+    const timer = setTimeout(() => {
+      void refresh()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [meta, refresh])
 
   return {
     filters,
