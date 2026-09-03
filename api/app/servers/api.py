@@ -166,8 +166,13 @@ async def screener_meta() -> ScreenerMeta:
 async def screener_refresh() -> CreateJobResponse:
     """スナップショット更新ジョブを作成し、バックグラウンドで実行する。
 
-    進捗は GET /api/v1/jobs/{job_id} でポーリングできる。
+    進捗は GET /api/v1/jobs/{job_id} でポーリングできる。既に同種の更新
+    ジョブが進行中の場合は新規作成せず、その job_id を返す（issue #73。
+    複数タブ・自動更新トリガーによる多重起動を防ぐ）。
     """
+    active = await _job_repo.find_active("screener_refresh")
+    if active is not None:
+        return CreateJobResponse(job_id=active.job_id, status=active.status)
     job_id = str(uuid.uuid4())
     await _job_repo.create(job_id, "screener_refresh")
     _spawn(run_refresh_job(job_id, _job_repo, _screener))

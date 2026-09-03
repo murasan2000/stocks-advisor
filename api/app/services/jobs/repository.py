@@ -111,6 +111,23 @@ class JobRepository:
                 row = await cursor.fetchone()
         return _row_to_job(row) if row is not None else None
 
+    async def find_active(self, query: str) -> Job | None:
+        """指定した query の未完了ジョブ（pending/running）のうち最新の1件を返す。
+
+        スクリーナー自動更新（issue #73）の多重起動防止に使う。同一 query の
+        ジョブが同時に複数走らないよう、新規作成前にこれで確認する。
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                f"SELECT {_SELECT_COLUMNS} FROM jobs"
+                " WHERE query = ? AND status IN (?, ?)"
+                " ORDER BY created_at DESC LIMIT 1",
+                (query, JobStatus.PENDING, JobStatus.RUNNING),
+            ) as cursor:
+                row = await cursor.fetchone()
+        return _row_to_job(row) if row is not None else None
+
     async def list(self, limit: int = 10) -> list[Job]:
         """最近のジョブ一覧を新しい順に返す。"""
         async with aiosqlite.connect(self._db_path) as db:
