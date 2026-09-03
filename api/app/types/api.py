@@ -203,6 +203,16 @@ class MarketReport(BaseModel):
     updated_at: float
 
 
+class CompanyReport(BaseModel):
+    """銘柄コード×日付で永続化されたAI企業分析レポート（issue #72）。"""
+
+    code: str
+    report_date: str  # YYYY-MM-DD
+    content: str
+    created_at: float
+    updated_at: float
+
+
 # ---------------------------------------------------------------------------
 # ウォッチリスト（ラベル）
 # ---------------------------------------------------------------------------
