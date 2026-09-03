@@ -124,6 +124,15 @@ npm run dev     # 開発サーバ（:5173、/api を :8000 にプロキシ）
 `settings.json` の permissions と、`hooks/guard-bash.py`（PreToolUse フック）で構成。
 settings.json は厳密 JSON でコメントを書けないため、意図はここに記す。
 
+- **SessionStart フック（`hooks/session-start.sh`）**: Claude Code on the web の
+  リモート環境でセッション開始時に `api/`（`uv sync --group dev`）・`web/`
+  （`npm install`）の依存関係を自動インストールする。ローカル（devcontainer /
+  手元環境）では実行しない（`$CLAUDE_CODE_REMOTE` で判定）。ローカルは
+  `.devcontainer/devcontainer.json` の `postCreateCommand`（`api/` の
+  `uv sync` のみ）や開発者自身の `npm install` に任せる。これが無いと、
+  リモートセッション開始直後は `web/` に `node_modules` が無く
+  `npm run lint` / `npm run build` が実行できない状態になる。
+
 - **allow**: テスト・lint・ビルド・読み取り系の git / gh など、日常的で安全なもの。
 - **ask**: 外向きの操作（`git push`、`gh pr create` 等）、依存の増減（`uv add` 等）、
   および CI 定義・ガードレール自身の編集。
