@@ -16,6 +16,7 @@ from typing import Any
 from app.services.agents import company, general, market, orchestrator
 from app.services.agents.runtime import build_run_config
 from app.services.agents.state import new_state
+from app.services.company.report_repository import CompanyReportRepository
 from app.services.jobs.repository import JobRepository
 from app.services.market.report_repository import MarketReportRepository
 from app.types.jobs import AgentPhase, AgentStep, JobStatus
@@ -193,11 +194,14 @@ async def run_agent_job(
     tickers: list[str] | None = None,
     categories: list[str] | None = None,
     market_report_repo: MarketReportRepository | None = None,
+    company_report_repo: CompanyReportRepository | None = None,
 ) -> None:
     """エージェントジョブをバックグラウンドで実行し、進捗・結果を保存する。
 
     kind="market" の場合、完了後にカテゴリ別レポートを本日分として
     market_report_repo へ永続化する（issue #66。同日の再実行は上書き）。
+    kind="company" の場合、完了後に銘柄別レポートを本日分として
+    company_report_repo へ永続化する（issue #72。同日の再実行は上書き）。
     """
     log = logging.LoggerAdapter(logger, {"job_id": job_id})
     state = new_state(query, tickers, categories)
@@ -216,6 +220,10 @@ async def run_agent_job(
             report_date = today_jst().isoformat()
             for category_id, content in reports.items():
                 await market_report_repo.upsert(category_id, report_date, content)
+        if kind == "company" and company_report_repo is not None and reports:
+            report_date = today_jst().isoformat()
+            for code, content in reports.items():
+                await company_report_repo.upsert(code, report_date, content)
         log.info(
             "agent job completed (kind=%s, %.1fs)", kind, time.monotonic() - started
         )
