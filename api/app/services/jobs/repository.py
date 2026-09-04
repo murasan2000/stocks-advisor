@@ -111,6 +111,63 @@ class JobRepository:
                 row = await cursor.fetchone()
         return _row_to_job(row) if row is not None else None
 
+    async def find_active(self, query: str) -> Job | None:
+        """指定した query の未完了ジョブ（pending/running）のうち最新の1件を返す。
+
+        スクリーナー自動更新（issue #73）の多重起動防止に使う。
+        """
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                f"SELECT {_SELECT_COLUMNS} FROM jobs"
+                " WHERE query = ? AND status IN (?, ?)"
+                " ORDER BY created_at DESC LIMIT 1",
+                (query, JobStatus.PENDING, JobStatus.RUNNING),
+            ) as cursor:
+                row = await cursor.fetchone()
+        return _row_to_job(row) if row is not None else None
+
+    async def create_if_not_active(self, job_id: str, query: str) -> Job | None:
+        """同一 query の未完了ジョブ（pending/running）が無い場合に限り新規作成する。
+
+        「未完了ジョブが無いか確認してから作る」を1つのSQL文（INSERT ... WHERE
+        NOT EXISTS）で行うことで、check-then-act の間に別リクエストが割り込む
+        レース（同時に複数タブから自動更新が発火した場合の多重起動）を防ぐ
+        （issue #73）。作成できた場合のみ Job を返し、既に未完了ジョブが
+        存在した場合は None を返す（呼び出し側は find_active() で既存の
+        job_id を取得する）。
+        """
+        now = time.time()
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO jobs (job_id, query, status, created_at, updated_at)"
+                " SELECT ?, ?, ?, ?, ?"
+                " WHERE NOT EXISTS ("
+                "   SELECT 1 FROM jobs WHERE query = ? AND status IN (?, ?)"
+                " )",
+                (
+                    job_id,
+                    query,
+                    JobStatus.PENDING,
+                    now,
+                    now,
+                    query,
+                    JobStatus.PENDING,
+                    JobStatus.RUNNING,
+                ),
+            )
+            await db.commit()
+            created = cursor.rowcount == 1
+        if not created:
+            return None
+        return Job(
+            job_id=job_id,
+            query=query,
+            status=JobStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+        )
+
     async def list(self, limit: int = 10) -> list[Job]:
         """最近のジョブ一覧を新しい順に返す。"""
         async with aiosqlite.connect(self._db_path) as db:

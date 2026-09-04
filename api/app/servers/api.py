@@ -13,6 +13,7 @@ from app.services.agents import market as market_agent
 from app.services.agents.runner import run_agent_job
 from app.services.chat.repository import ChatRepository
 from app.services.chat.service import accept_message, run_chat_agent_job
+from app.services.company.report_repository import CompanyReportRepository
 from app.services.jobs.repository import JobRepository
 from app.services.jobs.runner import run_refresh_job
 from app.services.market.fx import fetch_fx_quotes
@@ -27,6 +28,7 @@ from app.services.watchlist.repository import WatchlistRepository
 from app.services.watchlist.service import WatchlistService
 from app.types.api import (
     AgentJobRequest,
+    CompanyReport,
     CreateJobResponse,
     FxQuote,
     HealthResponse,
@@ -65,6 +67,7 @@ _watchlist = WatchlistService(_watchlist_repo, _screener_repo, _labels_repo)
 _holdings_repo = HoldingsRepository(settings.db_path)
 _portfolio = PortfolioService(_holdings_repo, _screener_repo)
 _market_report_repo = MarketReportRepository(settings.db_path)
+_company_report_repo = CompanyReportRepository(settings.db_path)
 
 # イベントループはタスクへ弱参照しか持たないため、参照を保持しないと
 # 実行中のバックグラウンドタスクが GC で消え得る（Python 公式ドキュメントの注意）。
@@ -88,6 +91,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     await _labels_repo.initialize()
     await _holdings_repo.initialize()
     await _market_report_repo.initialize()
+    await _company_report_repo.initialize()
     # mock モードかつキャッシュが空なら、合成データで即時シードする（開発用）。
     if settings.external_api_mode != "live" and await _screener_repo.count() == 0:
         logger.info("seeding screener snapshot with mock data")
@@ -166,10 +170,20 @@ async def screener_meta() -> ScreenerMeta:
 async def screener_refresh() -> CreateJobResponse:
     """スナップショット更新ジョブを作成し、バックグラウンドで実行する。
 
-    進捗は GET /api/v1/jobs/{job_id} でポーリングできる。
+    進捗は GET /api/v1/jobs/{job_id} でポーリングできる。既に同種の更新
+    ジョブが進行中の場合は新規作成せず、その job_id を返す（issue #73。
+    複数タブ・自動更新トリガーによる多重起動を防ぐ。判定と作成を1つの
+    SQL文で行うことで、ほぼ同時のリクエスト間のレースも防ぐ）。
     """
     job_id = str(uuid.uuid4())
-    await _job_repo.create(job_id, "screener_refresh")
+    job = await _job_repo.create_if_not_active(job_id, "screener_refresh")
+    if job is None:
+        active = await _job_repo.find_active("screener_refresh")
+        # レース上は他リクエストが作成直後に完了させている可能性もゼロでは
+        # ないが、その場合でも通常のジョブ完了時と同じ扱い（ポーリングで
+        # done を受け取るだけ）になるため実害はない。
+        assert active is not None
+        return CreateJobResponse(job_id=active.job_id, status=active.status)
     _spawn(run_refresh_job(job_id, _job_repo, _screener))
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
 
@@ -399,6 +413,7 @@ async def create_agent_job(request: AgentJobRequest) -> CreateJobResponse:
             request.tickers,
             request.categories,
             market_report_repo=_market_report_repo,
+            company_report_repo=_company_report_repo,
         )
     )
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
@@ -441,6 +456,33 @@ async def market_report(category_id: str, date: str = Query(...)) -> MarketRepor
         raise HTTPException(
             status_code=404,
             detail=f"report not found for category={category_id!r} date={date!r}",
+        )
+    return report
+
+
+# ---------------------------------------------------------------------------
+# 企業分析（AI企業分析レポートの永続化）
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/api/v1/company/{code}/reports/dates", response_model=list[str]
+)
+async def company_report_dates(code: str) -> list[str]:
+    """レポートが保存されている日付一覧を新しい順に返す（issue #72。
+    カレンダーの非活性判定に使う）。"""
+    return await _company_report_repo.list_dates(code)
+
+
+@app.get("/api/v1/company/{code}/reports", response_model=CompanyReport)
+async def company_report(code: str, date: str = Query(...)) -> CompanyReport:
+    """指定銘柄・指定日の保存済みAI企業分析レポートを返す
+    （issue #72。Job不要・即時取得）。"""
+    report = await _company_report_repo.get(code, date)
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"report not found for code={code!r} date={date!r}",
         )
     return report
 
