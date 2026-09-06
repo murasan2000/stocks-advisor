@@ -26,10 +26,12 @@ from app.services.agents.resolver import resolve_tickers
 from app.services.agents.runtime import invoke_llm
 from app.services.agents.state import AgentState, CompanyFacts, new_state
 from app.services.external.edinet import fetch_recent_filings
+from app.services.portfolio.repository import HoldingsRepository
 from app.services.screener.fetcher import synth_row
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.universe import Ticker, load_universe
 from app.services.search.web import search_web
+from app.services.watchlist.repository import WatchlistRepository
 from app.types.api import StockRow
 from app.utils.cache import async_ttl_cache
 from app.utils.settings import settings
@@ -143,6 +145,31 @@ def rule_based_analysis(facts: CompanyFacts) -> str:
     return "\n".join(lines)
 
 
+def _holding_context_lines(facts: CompanyFacts) -> list[str]:
+    """保有・ウォッチ文脈を説明する行を組み立てる（未保有・未ウォッチなら空）。
+
+    含み損益は現在値（metrics.price）が取得できている場合のみ算出する
+    （取得できない場合は保有数量・取得単価のみ表示）。
+    """
+    lines: list[str] = []
+    quantity = facts["holding_quantity"]
+    avg_cost = facts["holding_avg_cost"]
+    if quantity is not None and avg_cost is not None:
+        line = f"保有中: {quantity:,.0f}株（取得単価 {_fmt(avg_cost, '円')}）"
+        price = facts["metrics"].get("price")
+        if isinstance(price, int | float):
+            pnl = (price - avg_cost) * quantity
+            pnl_pct = (price - avg_cost) / avg_cost * 100 if avg_cost else None
+            sign = "+" if pnl >= 0 else ""
+            line += f" / 含み損益: {sign}{pnl:,.0f}円"
+            if pnl_pct is not None:
+                line += f"（{sign}{pnl_pct:.2f}%）"
+        lines.append(line)
+    if facts["watched"]:
+        lines.append("ウォッチリスト登録済み")
+    return lines
+
+
 def _facts_to_prompt(facts: CompanyFacts) -> str:
     """収集済み事実を LLM 分析の入力に整形する。"""
     m = facts["metrics"]
@@ -158,6 +185,10 @@ def _facts_to_prompt(facts: CompanyFacts) -> str:
         f"5年高値からの下落率: {_fmt(m.get('drop_from_high_pct'), '%')}"
         f" / 1年安値からの反発率: {_fmt(m.get('rebound_from_low_pct'), '%')}",
     ]
+    holding_lines = _holding_context_lines(facts)
+    if holding_lines:
+        lines += ["", "保有状況:"]
+        lines += [f"- {line}" for line in holding_lines]
     if facts["business_summary"]:
         lines += ["", f"企業概要: {facts['business_summary'][:500]}"]
     if facts["news"]:
@@ -183,6 +214,7 @@ def build_report(facts: CompanyFacts, analysis: str) -> str:
     ]
     if facts["business_summary"]:
         lines.append(f"- 概要: {facts['business_summary'][:200]}")
+    lines += [f"- {line}" for line in _holding_context_lines(facts)]
     lines += [
         "",
         "## 財務分析",
@@ -260,7 +292,12 @@ async def _fetch_business_summary(code: str) -> str:
         return ""
 
 
-async def _collect_one(code: str, row: StockRow | None) -> CompanyFacts:
+async def _collect_one(
+    code: str,
+    row: StockRow | None,
+    holdings_by_code: dict[str, tuple[float, float]],
+    watched_codes: set[str],
+) -> CompanyFacts:
     """1 銘柄分の事実情報を収集する。"""
     universe = {t.code: t for t in load_universe()}
     ticker = universe.get(code) or Ticker(code=code, name=code, market="不明")
@@ -274,6 +311,7 @@ async def _collect_one(code: str, row: StockRow | None) -> CompanyFacts:
         ),
         fetch_recent_filings(code),
     )
+    holding = holdings_by_code.get(code)
     return CompanyFacts(
         code=code,
         name=row.name if row.name != code else ticker.name,
@@ -282,6 +320,9 @@ async def _collect_one(code: str, row: StockRow | None) -> CompanyFacts:
         business_summary=summary,
         news=news,
         filings=filings,
+        holding_quantity=holding[0] if holding else None,
+        holding_avg_cost=holding[1] if holding else None,
+        watched=code in watched_codes,
     )
 
 
@@ -297,8 +338,27 @@ async def _collect(state: AgentState) -> dict[str, Any]:
         logger.info("screener snapshot unavailable: %s", exc)
         snapshot = []
     by_code = {r.code: r for r in snapshot}
+
+    try:
+        holdings = await HoldingsRepository(settings.db_path).list_all()
+    except Exception as exc:  # テーブル未初期化等 → 未保有扱いで継続
+        logger.info("holdings unavailable: %s", exc)
+        holdings = []
+    holdings_by_code = {
+        code: (quantity, avg_cost) for code, quantity, avg_cost in holdings
+    }
+
+    try:
+        watched_codes = set(await WatchlistRepository(settings.db_path).list_codes())
+    except Exception as exc:  # テーブル未初期化等 → 未登録扱いで継続
+        logger.info("watchlist unavailable: %s", exc)
+        watched_codes = set()
+
     facts_list = await asyncio.gather(
-        *(_collect_one(code, by_code.get(code)) for code in tickers)
+        *(
+            _collect_one(code, by_code.get(code), holdings_by_code, watched_codes)
+            for code in tickers
+        )
     )
     return {"company_facts": {f["code"]: f for f in facts_list}}
 
