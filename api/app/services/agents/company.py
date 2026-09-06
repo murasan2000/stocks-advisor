@@ -326,33 +326,43 @@ async def _collect_one(
     )
 
 
+async def _fetch_snapshot() -> list[StockRow]:
+    try:
+        return await ScreenerRepository(settings.db_path).get_all()
+    except Exception as exc:  # テーブル未初期化等 → 合成フォールバックで継続
+        logger.info("screener snapshot unavailable: %s", exc)
+        return []
+
+
+async def _fetch_holdings() -> dict[str, tuple[float, float]]:
+    try:
+        holdings = await HoldingsRepository(settings.db_path).list_all()
+    except Exception as exc:  # テーブル未初期化等 → 未保有扱いで継続
+        logger.info("holdings unavailable: %s", exc)
+        return {}
+    return {code: (quantity, avg_cost) for code, quantity, avg_cost in holdings}
+
+
+async def _fetch_watched_codes() -> set[str]:
+    try:
+        return set(await WatchlistRepository(settings.db_path).list_codes())
+    except Exception as exc:  # テーブル未初期化等 → 未登録扱いで継続
+        logger.info("watchlist unavailable: %s", exc)
+        return set()
+
+
 async def _collect(state: AgentState) -> dict[str, Any]:
     """対象銘柄の事実情報を収集する（副作用はこのノードに限定）。"""
     tickers = state["tickers"]
     if not tickers:
         return {"company_facts": {}}
 
-    try:
-        snapshot = await ScreenerRepository(settings.db_path).get_all()
-    except Exception as exc:  # テーブル未初期化等 → 合成フォールバックで継続
-        logger.info("screener snapshot unavailable: %s", exc)
-        snapshot = []
+    # 3つの取得元は互いに独立しているため並行して取得する（各自で例外を
+    # 握りつぶしフォールバックするので、失敗しても他の取得には影響しない）。
+    snapshot, holdings_by_code, watched_codes = await asyncio.gather(
+        _fetch_snapshot(), _fetch_holdings(), _fetch_watched_codes()
+    )
     by_code = {r.code: r for r in snapshot}
-
-    try:
-        holdings = await HoldingsRepository(settings.db_path).list_all()
-    except Exception as exc:  # テーブル未初期化等 → 未保有扱いで継続
-        logger.info("holdings unavailable: %s", exc)
-        holdings = []
-    holdings_by_code = {
-        code: (quantity, avg_cost) for code, quantity, avg_cost in holdings
-    }
-
-    try:
-        watched_codes = set(await WatchlistRepository(settings.db_path).list_codes())
-    except Exception as exc:  # テーブル未初期化等 → 未登録扱いで継続
-        logger.info("watchlist unavailable: %s", exc)
-        watched_codes = set()
 
     facts_list = await asyncio.gather(
         *(

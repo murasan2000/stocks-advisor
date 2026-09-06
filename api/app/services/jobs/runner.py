@@ -66,29 +66,37 @@ async def run_refresh_job(
         count = await asyncio.wait_for(
             screener.refresh(progress=_progress), timeout=_JOB_TIMEOUT
         )
-        step.status = AgentPhase.DONE
-        step.summary = f"{count} 銘柄を更新しました"
-        step.finished_at = time.time()
-        await repo.update_progress(job_id, [step])
-        await repo.update_status(job_id, JobStatus.DONE, result=f"{count}")
-        log.info("refresh job completed: %d stocks", count)
-
-        if detect_enabled and watch_codes:
-            assert screener_repo is not None and alerts_repo is not None
-            new_rows = await screener_repo.get_by_codes(watch_codes)
-            alerts = detect_alerts(old_rows, new_rows)
-            if alerts:
-                await alerts_repo.create_many(alerts)
-                log.info("detected %d watchlist alerts", len(alerts))
     except TimeoutError:
         log.error("refresh job timed out")
         step.status = AgentPhase.ERROR
         step.finished_at = time.time()
         await repo.update_progress(job_id, [step])
         await repo.update_status(job_id, JobStatus.ERROR, error="タイムアウトしました")
+        return
     except Exception as exc:
         log.exception("refresh job failed: %s", exc)
         step.status = AgentPhase.ERROR
         step.finished_at = time.time()
         await repo.update_progress(job_id, [step])
         await repo.update_status(job_id, JobStatus.ERROR, error=str(exc))
+        return
+
+    step.status = AgentPhase.DONE
+    step.summary = f"{count} 銘柄を更新しました"
+    step.finished_at = time.time()
+    await repo.update_progress(job_id, [step])
+    await repo.update_status(job_id, JobStatus.DONE, result=f"{count}")
+    log.info("refresh job completed: %d stocks", count)
+
+    if detect_enabled and watch_codes:
+        # アラート検出の失敗はスナップショット更新自体の成否に影響させない
+        # （更新は既にDONEで確定済み。検出は失敗しても機能縮退として続行）。
+        try:
+            assert screener_repo is not None and alerts_repo is not None
+            new_rows = await screener_repo.get_by_codes(watch_codes)
+            alerts = detect_alerts(old_rows, new_rows)
+            if alerts:
+                await alerts_repo.create_many(alerts)
+                log.info("detected %d watchlist alerts", len(alerts))
+        except Exception as exc:
+            log.warning("watchlist alert detection failed: %s", exc)
