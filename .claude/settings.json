@@ -47,7 +47,9 @@
       "Bash(npm install *)",
       "Bash(npm uninstall *)",
       "Edit(/.github/workflows/**)",
-      "Edit(/.claude/**)"
+      "Edit(/.claude/settings.json)",
+      "Edit(/.claude/settings.local.json)",
+      "Edit(/.claude/hooks/**)"
     ],
     "deny": [
       "Read(.env)",
