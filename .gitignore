@@ -25,6 +25,9 @@ dist
 dist-ssr
 *.local
 
+# Claude Code の並列サブエージェント用 git worktree（一時的な作業ツリー）
+.claude/worktrees/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

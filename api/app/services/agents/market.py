@@ -42,7 +42,9 @@ _ANALYSIS_SYSTEM_PROMPT = (
 )
 
 
-# MVPカテゴリ（固定2種）。反応を見て拡張する（Refs #48）。
+# カテゴリの実体は「検索クエリ → search_web → LLM要約」の共通パイプラインのみ
+# （select_categories → collect → analyze → report）で完結する。新カテゴリの
+# 追加はこのリストへのエントリ追加だけで済むように設計している（Refs #48, #74）。
 MARKET_CATEGORIES: list[dict[str, str]] = [
     {
         "id": "jp_stocks",
@@ -53,6 +55,16 @@ MARKET_CATEGORIES: list[dict[str, str]] = [
         "id": "us_stocks",
         "label": "米国株市況",
         "query": "US stock market today Dow Jones Nasdaq S&P 500",
+    },
+    {
+        "id": "fx",
+        "label": "為替市況",
+        "query": "ドル円 為替 相場 本日の動向",
+    },
+    {
+        "id": "semiconductor",
+        "label": "半導体セクター",
+        "query": "semiconductor industry news chip stocks today",
     },
 ]
 
