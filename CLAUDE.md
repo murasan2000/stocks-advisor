@@ -98,7 +98,9 @@ npm run dev     # 開発サーバ（:5173、/api を :8000 にプロキシ）
   （`.claude/skills/git-workflow/SKILL.md`）。要点: 作業前に必ず `claude/feature/<topic>`
   ブランチを切る、作業が一区切りついたら指示を待たずに commit + push まで行う
   （セッション切断による作業消失を防ぐため）、コミットメッセージは
-  `<action>(<prefix>): <context>` 形式にする。
+  `<type>(<scope>): <description>` 形式にする（type は Conventional Commits
+  準拠、scope はプロダクトコードと Claude Code 運用ルール自身を区別する。
+  詳細は git-workflow skill 参照）。
 - **CI はローカル検証を省く理由にはしない**。CI の役割は「Claude が自分の変更を
   甘く判定していないか」を機械的に潰すことなので、両方通るのが正常な状態。
 - **自己レビュー必須**: 実装が一段落したら、ユーザーのレビューに回す前に

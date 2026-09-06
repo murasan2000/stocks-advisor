@@ -31,18 +31,56 @@ git switch -c claude/feature/<topic>
 ## 3. コミットメッセージ規約
 
 ```
-<action>(<prefix>): <context>
+<type>(<scope>): <description>
 ```
 
-- `prefix`: 変更領域。`api` / `web` / `doc` / `infra` / `ci` / `cd` / `test` など。
-- `action`: 変更種別。`add`（新規追加）/ `fix`（修正）/ `bug`（バグ修正）/
-  `refactor`（リファクタ）など。
-- `context`: 何を変更したかが後から読んで分かる説明（日本語可）。多少長くても
-  タスク・スコープが伝わることを優先する。
+Conventional Commits の type 語彙をベースにし、scope はこのリポジトリの構成に
+合わせる（Claude Code が実装しPRで人間がレビューする、という運用上、
+自動化・機械可読性を優先する）。
+
+### type
+
+| type | 意味 |
+|---|---|
+| `feat` | 新機能・新規実装の追加 |
+| `fix` | 不具合・想定外動作の修正 |
+| `refactor` | 外部の動作を変えない内部構造の変更 |
+| `perf` | パフォーマンス改善 |
+| `test` | テストの追加・修正のみ |
+| `docs` | ドキュメントのみの変更 |
+| `chore` | 上記に当てはまらない雑務・依存更新 |
+| `ci` | `.github/workflows/` の変更 |
+
+### scope
+
+「プロダクトのコード」と「Claude Code 自身の運用ルール」を区別する。
+
+| scope | 対象 |
+|---|---|
+| `api` | `api/` 配下（`agents` 以外。エンドポイント・スクリーナー・チャット・Jobs等） |
+| `agent` | `api/app/services/agents/` 配下（LangGraphによるAIエージェント＝プロダクト機能） |
+| `web` | `web/` 配下（フロントエンド） |
+| `infra` | デプロイ・実行環境（devcontainer・CI/CD基盤・環境変数まわり等） |
+| `harness` | `.claude/` 配下（権限・フック・スキル・サブエージェント定義）と `CLAUDE.md`。Claude Code 自身がどう動くか（実装のためのAI DevOps基盤）を規定する設定 |
+
+- scope 省略可なのは `docs` / `chore` / `ci` など、特定領域に閉じない変更のみ。
+
+### `agent` と `harness` の使い分け
+
+紛らわしいので明確に区別する。
+
+- `agent`: プロダクトが提供するAIエージェント機能そのもの（LangGraphのグラフ・ノード実装）。
+- `harness`: Claude Code というツール自体をこのリポジトリでどう運用するか（権限・フック・
+  スキル・サブエージェント定義・CLAUDE.md）。プロダクトコードではない。
+- 例:「並列サブエージェントのworktreeパスが誤ってガードレールのaskルールに
+  引っかかる問題の修正」はプロダクトの`agent`機能ではなくClaude Code運用の問題なので
+  `fix(harness): ...` になる（`fix(infra)` ではない）。
 
 例:
 
-- `add(api): 一覧取得API追加`
-- `fix(web): タイムアウト問題を修正`
-- `fix(doc): 構築手順書修正`
-- `bug(infra): パブリック公開のリソースを閉域に`
+- `feat(web): 銘柄比較モーダルを追加`
+- `fix(agent): 意図判定の誤分類を修正`
+- `fix(harness): worktree配下の実装編集がガードレールaskに誤爆する問題を修正`
+- `refactor(api): スクリーナー処理を分割`
+- `docs: CLAUDE.mdの開発フロー節を更新`
+- `chore(api): 依存パッケージを更新`
