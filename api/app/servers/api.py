@@ -24,6 +24,7 @@ from app.services.portfolio.service import PortfolioService
 from app.services.screener.history import fetch_candles_live_cached, synth_candles
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
+from app.services.watchlist.alerts_repository import AlertsRepository
 from app.services.watchlist.labels_repository import LabelsRepository
 from app.services.watchlist.repository import WatchlistRepository
 from app.services.watchlist.service import WatchlistService
@@ -46,6 +47,7 @@ from app.types.api import (
     StockHistory,
     StockRow,
     StocksResponse,
+    WatchlistAlert,
 )
 from app.types.chat import (
     Conversation,
@@ -66,6 +68,7 @@ _chat_repo = ChatRepository(settings.db_path)
 _watchlist_repo = WatchlistRepository(settings.db_path)
 _labels_repo = LabelsRepository(settings.db_path)
 _watchlist = WatchlistService(_watchlist_repo, _screener_repo, _labels_repo)
+_alerts_repo = AlertsRepository(settings.db_path)
 _holdings_repo = HoldingsRepository(settings.db_path)
 _portfolio = PortfolioService(_holdings_repo, _screener_repo)
 _market_report_repo = MarketReportRepository(settings.db_path)
@@ -91,6 +94,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     await _chat_repo.initialize()
     await _watchlist_repo.initialize()
     await _labels_repo.initialize()
+    await _alerts_repo.initialize()
     await _holdings_repo.initialize()
     await _market_report_repo.initialize()
     await _company_report_repo.initialize()
@@ -186,7 +190,16 @@ async def screener_refresh() -> CreateJobResponse:
         # done を受け取るだけ）になるため実害はない。
         assert active is not None
         return CreateJobResponse(job_id=active.job_id, status=active.status)
-    _spawn(run_refresh_job(job_id, _job_repo, _screener))
+    _spawn(
+        run_refresh_job(
+            job_id,
+            _job_repo,
+            _screener,
+            screener_repo=_screener_repo,
+            watchlist_repo=_watchlist_repo,
+            alerts_repo=_alerts_repo,
+        )
+    )
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
 
 
@@ -249,6 +262,27 @@ async def watchlist_remove(code: str) -> Response:
     """解除する（未登録でもエラーにしない）。"""
     await _watchlist.remove(code)
     return Response(status_code=204)
+
+
+@app.get("/api/v1/watchlist/alerts", response_model=list[WatchlistAlert])
+async def watchlist_alerts_list(
+    unread_only: bool = Query(default=True),
+) -> list[WatchlistAlert]:
+    """ウォッチ銘柄の価格・スコア変化アラートを新しい順で返す（issue #81）。
+
+    スナップショット更新ジョブ完了時にサーバ側で検出済みのアラートを返すのみで、
+    ここでは検出処理は行わない（run_refresh_job() 参照）。
+    """
+    if unread_only:
+        return await _alerts_repo.list_unread()
+    return await _alerts_repo.list_all()
+
+
+@app.post("/api/v1/watchlist/alerts/read-all", status_code=200)
+async def watchlist_alerts_read_all() -> Response:
+    """全アラートを既読にする。"""
+    await _alerts_repo.mark_all_read()
+    return Response(status_code=200)
 
 
 # ---------------------------------------------------------------------------
