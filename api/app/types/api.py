@@ -12,6 +12,18 @@ class CreateJobResponse(BaseModel):
     status: JobStatus
 
 
+class RefreshIfStaleResponse(BaseModel):
+    """POST /api/v1/screener/refresh-if-stale の応答（issue #77）。
+
+    スナップショットが新鮮で何もしなかった場合は triggered=False のみ返し、
+    job_id/status は付かない。
+    """
+
+    triggered: bool
+    job_id: str | None = None
+    status: JobStatus | None = None
+
+
 class AgentJobRequest(BaseModel):
     """エージェントジョブの作成リクエスト。
 

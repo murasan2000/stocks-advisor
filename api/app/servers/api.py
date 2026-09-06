@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import AsyncGenerator, Coroutine
 from contextlib import asynccontextmanager
@@ -40,6 +41,7 @@ from app.types.api import (
     LabelCreateRequest,
     MarketCategoryInfo,
     MarketReport,
+    RefreshIfStaleResponse,
     ScreenerMeta,
     StockHistory,
     StockRow,
@@ -186,6 +188,36 @@ async def screener_refresh() -> CreateJobResponse:
         return CreateJobResponse(job_id=active.job_id, status=active.status)
     _spawn(run_refresh_job(job_id, _job_repo, _screener))
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
+
+
+# web/src/hooks/useScreener.ts の STALE_THRESHOLD_MS と揃える（issue #77）。
+_STALE_THRESHOLD_SECONDS = 24 * 60 * 60
+
+
+@app.post(
+    "/api/v1/screener/refresh-if-stale", response_model=RefreshIfStaleResponse
+)
+async def screener_refresh_if_stale() -> RefreshIfStaleResponse:
+    """スナップショットが古い場合のみ更新ジョブを起動する（issue #77）。
+
+    サーバ起点の定期更新は「スケジューリング自体はアプリの外（cron等。
+    将来クラウド移行時はCloud Scheduler/EventBridge等）に置き、アプリは
+    叩かれるだけの薄いエンドポイントを持つ」という方針（候補B）に基づく。
+    フロント起点の自動更新（issue #73, useScreener.ts）と同じ閾値・
+    重複防止ロジック（screener_refresh() の create_if_not_active()）を
+    再利用するため、新鮮なら何もせず、進行中ジョブがあっても多重作成しない。
+    """
+    last_refresh, _, _ = await _screener_repo.get_meta()
+    is_stale = (
+        last_refresh is None
+        or (time.time() - last_refresh) > _STALE_THRESHOLD_SECONDS
+    )
+    if not is_stale:
+        return RefreshIfStaleResponse(triggered=False)
+    result = await screener_refresh()
+    return RefreshIfStaleResponse(
+        triggered=True, job_id=result.job_id, status=result.status
+    )
 
 
 # ---------------------------------------------------------------------------
