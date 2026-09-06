@@ -2160,7 +2160,7 @@ input {
 }
 .compare-modal {
   width: 100%;
-  max-width: 900px;
+  max-width: 1200px;
   max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
