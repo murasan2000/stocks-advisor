@@ -1133,6 +1133,24 @@ input {
   cursor: default;
 }
 
+/* 複数銘柄比較ボタン（Issue #82）。AI企業分析ボタンと同じ選択集合を使うが
+   別アクションであることが分かるよう控えめな配色にする。 */
+.select-action-compare {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.select-action-compare:hover {
+  background: var(--surface-hover);
+}
+
 .screener-disclaimer {
   margin-top: 16px;
   font-size: 11px;
@@ -2126,6 +2144,54 @@ input {
   margin-top: 8px;
   color: var(--error);
   font-size: 12px;
+}
+
+/* 複数銘柄の指標比較モーダル（Issue #82）。
+   label-picker-overlay/modal と同じ導線（背景クリック・Escapeで閉じる）。 */
+.compare-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 58;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 16px;
+}
+.compare-modal {
+  width: 100%;
+  max-width: 900px;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  padding: 16px;
+}
+.compare-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.compare-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-3);
+}
+.compare-table-wrap {
+  overflow: auto;
+}
+.compare-table th,
+.compare-table td {
+  white-space: nowrap;
+}
+.compare-col-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .market-report-error {
