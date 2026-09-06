@@ -39,9 +39,12 @@ interface Props {
   loading: boolean
   watchedCodes: Set<string>
   onToggleWatch: (code: string) => void
-  // 銘柄選択（AI企業分析）はスクリーニング画面のみで使う任意機能
+  // 銘柄選択（AI企業分析・複数銘柄比較で共用）はスクリーニング画面のみで使う任意機能
   selected?: Set<string>
   onToggleSelect?: (code: string) => void
+  // 選択可能な上限数（比較ビューの都合、Issue #82）。指定時、上限に達すると
+  // 未選択行のチェックボックスを無効化する。
+  selectionMax?: number
   // 行クリックで詳細を開閉する（ウォッチリスト画面のみで使用）
   onRowClick?: (code: string) => void
   // 詳細（チャート）を開いている銘柄コードの集合。指定した銘柄の行の直下に
@@ -68,6 +71,7 @@ export function StockTable({
   onToggleWatch,
   selected,
   onToggleSelect,
+  selectionMax,
   onRowClick,
   openCodes,
   renderDetail,
@@ -84,8 +88,8 @@ export function StockTable({
         <thead>
           <tr>
             {showSelectCol ? (
-              <th className="select-col" title="選択して企業分析に利用">
-                分析
+              <th className="select-col" title="選択して企業分析・比較に利用">
+                選択
               </th>
             ) : null}
             <th className="watch-col" title="ウォッチリスト" />
@@ -113,6 +117,8 @@ export function StockTable({
           {stocks.map((s) => {
             const up = (s.change_pct ?? 0) >= 0
             const isSelected = selected?.has(s.code) ?? false
+            const atSelectionLimit =
+              !isSelected && selectionMax != null && (selected?.size ?? 0) >= selectionMax
             const isWatched = watchedCodes.has(s.code)
             const isOpen = openCodes?.has(s.code) ?? false
             return (
@@ -128,8 +134,14 @@ export function StockTable({
                     <input
                       type="checkbox"
                       checked={isSelected}
+                      disabled={atSelectionLimit}
                       onChange={() => onToggleSelect?.(s.code)}
-                      aria-label={`${s.name} を分析対象に選択`}
+                      aria-label={`${s.name} を分析・比較対象に選択`}
+                      title={
+                        atSelectionLimit
+                          ? `選択は最大${selectionMax}銘柄までです`
+                          : undefined
+                      }
                     />
                   </td>
                 ) : null}

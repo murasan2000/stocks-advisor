@@ -18,8 +18,12 @@ from app.services.agents.runtime import (
     classify_intent_llm,
     extract_tickers,
 )
+from app.services.agents.state import CompanyFacts, new_state
 from app.services.jobs.repository import JobRepository
+from app.services.portfolio.repository import HoldingsRepository
+from app.services.watchlist.repository import WatchlistRepository
 from app.types.jobs import AgentPhase, JobStatus
+from app.utils.settings import settings
 
 
 async def _fake_llm(
@@ -150,6 +154,117 @@ async def test_company_agent_reports_per_ticker(fast_intent: None) -> None:
 async def test_company_agent_requires_ticker(fast_intent: None) -> None:
     answer = await company.run("分析して", tickers=[])
     assert "銘柄コード" in answer
+
+
+# ---------------------------------------------------------------------------
+# 企業分析（子）: ポートフォリオ/ウォッチリストの保有文脈（Issue #78）
+# ---------------------------------------------------------------------------
+
+
+def _make_company_facts(
+    *,
+    holding_quantity: float | None = None,
+    holding_avg_cost: float | None = None,
+    watched: bool = False,
+    price: float | None = 3000.0,
+) -> CompanyFacts:
+    """保有文脈のテスト用に最小限の CompanyFacts を組み立てる。"""
+    return CompanyFacts(
+        code="7203",
+        name="トヨタ自動車",
+        market="プライム",
+        metrics={"price": price},
+        business_summary="",
+        news=[],
+        filings=[],
+        holding_quantity=holding_quantity,
+        holding_avg_cost=holding_avg_cost,
+        watched=watched,
+    )
+
+
+def test_facts_to_prompt_includes_holding_pnl() -> None:
+    facts = _make_company_facts(holding_quantity=100, holding_avg_cost=2500.0)
+    prompt = company._facts_to_prompt(facts)
+    assert "保有中: 100株（取得単価 2,500.00円）" in prompt
+    assert "含み損益: +50,000円（+20.00%）" in prompt
+
+
+def test_facts_to_prompt_includes_watched() -> None:
+    facts = _make_company_facts(watched=True)
+    prompt = company._facts_to_prompt(facts)
+    assert "ウォッチリスト登録済み" in prompt
+
+
+def test_facts_to_prompt_omits_holding_context_when_neither() -> None:
+    facts = _make_company_facts()
+    prompt = company._facts_to_prompt(facts)
+    assert "保有中" not in prompt
+    assert "ウォッチリスト登録済み" not in prompt
+
+
+def test_build_report_includes_holding_loss() -> None:
+    # 含み損（現在値 < 取得単価）の場合も符号付きで表示される
+    facts = _make_company_facts(
+        holding_quantity=10, holding_avg_cost=2000.0, price=1800.0
+    )
+    report = company.build_report(facts, "分析")
+    assert "保有中: 10株（取得単価 2,000.00円）" in report
+    assert "含み損益: -2,000円（-10.00%）" in report
+
+
+def test_facts_to_prompt_skips_pnl_when_price_unavailable() -> None:
+    # 現在値未取得（None）でも保有数量・取得単価のみ表示し、含み損益は算出しない
+    facts = _make_company_facts(
+        holding_quantity=100, holding_avg_cost=2500.0, price=None
+    )
+    prompt = company._facts_to_prompt(facts)
+    assert "保有中: 100株（取得単価 2,500.00円）" in prompt
+    assert "含み損益" not in prompt
+
+
+async def test_collect_populates_holding_and_watchlist_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """_collect ノードが HoldingsRepository/WatchlistRepository を反映する。"""
+    db_path = str(tmp_path / "app.db")
+    monkeypatch.setattr(settings, "db_path", db_path)
+    monkeypatch.setattr(company, "search_web", _no_search)
+
+    holdings_repo = HoldingsRepository(db_path)
+    await holdings_repo.initialize()
+    await holdings_repo.upsert("7203", 300, 2500.0)
+
+    watchlist_repo = WatchlistRepository(db_path)
+    await watchlist_repo.initialize()
+    await watchlist_repo.add("6758")
+
+    result = await company._collect(new_state("分析して", tickers=["7203", "6758"]))
+    facts = result["company_facts"]
+
+    # 7203: 保有中（ウォッチ未登録）
+    assert facts["7203"]["holding_quantity"] == 300
+    assert facts["7203"]["holding_avg_cost"] == 2500.0
+    assert facts["7203"]["watched"] is False
+
+    # 6758: ウォッチ登録済み（未保有）
+    assert facts["6758"]["holding_quantity"] is None
+    assert facts["6758"]["holding_avg_cost"] is None
+    assert facts["6758"]["watched"] is True
+
+
+async def test_collect_falls_back_when_holdings_table_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """holdings/watchlist テーブル未初期化でも企業分析自体は継続する。"""
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "missing.db"))
+    monkeypatch.setattr(company, "search_web", _no_search)
+
+    result = await company._collect(new_state("分析して", tickers=["7203"]))
+    facts = result["company_facts"]
+
+    assert facts["7203"]["holding_quantity"] is None
+    assert facts["7203"]["watched"] is False
 
 
 async def test_company_us_agent_reports_per_ticker(fast_intent: None) -> None:

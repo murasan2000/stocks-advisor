@@ -12,6 +12,18 @@ class CreateJobResponse(BaseModel):
     status: JobStatus
 
 
+class RefreshIfStaleResponse(BaseModel):
+    """POST /api/v1/screener/refresh-if-stale の応答（issue #77）。
+
+    スナップショットが新鮮で何もしなかった場合は triggered=False のみ返し、
+    job_id/status は付かない。
+    """
+
+    triggered: bool
+    job_id: str | None = None
+    status: JobStatus | None = None
+
+
 class AgentJobRequest(BaseModel):
     """エージェントジョブの作成リクエスト。
 
@@ -229,3 +241,26 @@ class LabelCreateRequest(BaseModel):
     name: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)
     ]
+
+
+# ---------------------------------------------------------------------------
+# ウォッチリスト（価格・スコア変化アラート、issue #81）
+# ---------------------------------------------------------------------------
+
+
+class WatchlistAlert(BaseModel):
+    """ウォッチ銘柄の価格・スコアが閾値を超えて変化した際のアラート1件。
+
+    候補A（アプリ内通知）採用のため、Web Push・メール送信は行わず、スナップショット
+    更新ジョブ完了時にサーバ側で検出してDBへ保存し、次回アクセス時に一覧表示する
+    （watchlist/alerts.py の detect_alerts() 参照）。
+    """
+
+    alert_id: str
+    code: str
+    kind: Literal["price", "score"]
+    old_value: float
+    new_value: float
+    change_pct: float | None = None  # 価格アラートのみ設定（スコアアラートは None）
+    created_at: float
+    read: bool = False
