@@ -18,6 +18,9 @@ lerna-debug.log*
 
 # DB
 **/*.db
+# db/ 配下はローカルのデータ置き場。SQLite 本体だけでなく、外部 API から
+# 取得したユニバース等のキャッシュ JSON も生成物なので追跡しない。
+db/*.json
 
 # Node
 node_modules
