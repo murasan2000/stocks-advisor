@@ -42,6 +42,9 @@ class MarketFacts(TypedDict):
     category: str  # カテゴリID（例: "jp_stocks"）
     label: str  # 表示名（例: "日本株市況"）
     news: list[SearchResult]  # 関連ニュース（Web検索 topic=news）
+    # my_portfolio 専用: ウォッチ・保有銘柄が0件で検索自体を行わなかったか。
+    # 他の固定カテゴリでは常に False（news が空でも「検索したが0件」を表す）。
+    no_targets: bool
 
 
 class AgentState(TypedDict):

@@ -110,7 +110,7 @@ _DEFAULT_CATEGORY_IDS = [
 def rule_based_analysis(facts: MarketFacts) -> str:
     """LLM 不使用のルールベース要約（フォールバック。ニュース見出しの箇条書き）。"""
     if not facts["news"]:
-        if facts["category"] == _MY_PORTFOLIO_ID:
+        if facts["no_targets"]:
             return "### 概況\n- ウォッチリスト・保有銘柄が未登録です。"
         return (
             "### 概況\n"
@@ -146,7 +146,7 @@ def build_report(facts: MarketFacts, analysis: str) -> str:
         for n in facts["news"]:
             snippet = f" — {n['snippet'][:100]}" if n["snippet"] else ""
             lines.append(f"- [{n['title']}]({n['url']}){snippet}")
-    elif facts["category"] == _MY_PORTFOLIO_ID:
+    elif facts["no_targets"]:
         lines.append(
             "- ウォッチリスト・保有銘柄が未登録です"
             "（登録すると関連ニュースを表示します）"
@@ -186,7 +186,9 @@ async def _collect_one(category_id: str) -> MarketFacts:
     """1 カテゴリ分の事実情報を収集する（固定クエリのカテゴリ用）。"""
     category = _CATEGORY_BY_ID[category_id]
     news = await _fetch_category_news(category_id)
-    return MarketFacts(category=category_id, label=category["label"], news=news)
+    return MarketFacts(
+        category=category_id, label=category["label"], news=news, no_targets=False
+    )
 
 
 async def _fetch_portfolio_codes() -> list[str]:
@@ -218,13 +220,17 @@ async def _collect_my_portfolio() -> MarketFacts:
     label = _CATEGORY_BY_ID[_MY_PORTFOLIO_ID]["label"]
     codes = await _fetch_portfolio_codes()
     if not codes:
-        return MarketFacts(category=_MY_PORTFOLIO_ID, label=label, news=[])
+        return MarketFacts(
+            category=_MY_PORTFOLIO_ID, label=label, news=[], no_targets=True
+        )
 
     universe = {t.code: t for t in load_universe()}
     names = [f"{universe[c].name} {c}" if c in universe else c for c in codes]
     query = ", ".join(names) + " 株価 ニュース"
     news = await search_web(query, topic="news", max_results=_NEWS_PER_CATEGORY)
-    return MarketFacts(category=_MY_PORTFOLIO_ID, label=label, news=news)
+    return MarketFacts(
+        category=_MY_PORTFOLIO_ID, label=label, news=news, no_targets=False
+    )
 
 
 async def _collect(state: AgentState) -> dict[str, Any]:

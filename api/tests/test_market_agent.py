@@ -135,6 +135,31 @@ async def test_my_portfolio_category_builds_query_from_watchlist_and_holdings(
     assert "6758" in queries[0]
 
 
+async def test_my_portfolio_category_with_targets_but_no_news(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ウォッチ・保有銘柄はあるが検索結果が0件の場合、『未登録』とは表示しない
+    （self-review で見つかった、no_targets 導入前は両ケースが同じ
+    メッセージになっていた不具合の回帰テスト）。"""
+    db_path = str(tmp_path / "app.db")
+    monkeypatch.setattr(settings, "db_path", db_path)
+    monkeypatch.setattr(market, "invoke_llm", _fake_llm)
+
+    watchlist_repo = WatchlistRepository(db_path)
+    await watchlist_repo.initialize()
+    await watchlist_repo.add("7203")
+
+    async def _empty_search(query: str, **kwargs: Any) -> list[dict[str, str]]:
+        return []
+
+    monkeypatch.setattr(market, "search_web", _empty_search)
+
+    answer = await market.run(categories=["my_portfolio"])
+
+    assert "ウォッチリスト・保有銘柄が未登録です" not in answer
+    assert "関連ニュースは取得できませんでした（検索キー未設定または0件）" in answer
+
+
 async def test_my_portfolio_category_empty_when_no_watchlist_or_holdings(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -191,7 +216,9 @@ async def test_market_agent_falls_back_offline(
 
 
 def test_rule_based_analysis_without_news() -> None:
-    facts = MarketFacts(category="jp_stocks", label="日本株市況", news=[])
+    facts = MarketFacts(
+        category="jp_stocks", label="日本株市況", news=[], no_targets=False
+    )
     result = market.rule_based_analysis(facts)
     assert "関連ニュースを取得できませんでした" in result
 
@@ -201,6 +228,7 @@ def test_rule_based_analysis_with_news() -> None:
         category="jp_stocks",
         label="日本株市況",
         news=[{"title": "日経平均反発", "url": "https://e.com/1", "snippet": ""}],
+        no_targets=False,
     )
     result = market.rule_based_analysis(facts)
     assert "日経平均反発" in result
