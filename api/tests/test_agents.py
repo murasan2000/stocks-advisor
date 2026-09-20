@@ -157,6 +157,99 @@ async def test_company_agent_requires_ticker(fast_intent: None) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 企業分析（子）: 複数銘柄の横並び比較サマリ（Issue #79）
+# ---------------------------------------------------------------------------
+
+
+def _make_multi_company_facts() -> dict[str, CompanyFacts]:
+    return {
+        "7203": CompanyFacts(
+            code="7203",
+            name="トヨタ自動車",
+            market="プライム",
+            metrics={
+                "price": 3000.0,
+                "per": 10.0,
+                "pbr": 1.2,
+                "dividend_yield": 3.0,
+                "roe": 12.0,
+                "score": 70.0,
+            },
+            business_summary="",
+            news=[],
+            filings=[],
+            holding_quantity=None,
+            holding_avg_cost=None,
+            watched=False,
+        ),
+        "6758": CompanyFacts(
+            code="6758",
+            name="ソニーグループ",
+            market="プライム",
+            metrics={
+                "price": 15000.0,
+                "per": 20.0,
+                "pbr": 3.0,
+                "dividend_yield": 0.5,
+                "roe": 15.0,
+                "score": 60.0,
+            },
+            business_summary="",
+            news=[],
+            filings=[],
+            holding_quantity=None,
+            holding_avg_cost=None,
+            watched=False,
+        ),
+    }
+
+
+def test_build_comparison_table_includes_names_and_metrics() -> None:
+    facts_map = _make_multi_company_facts()
+    table = company.build_comparison_table(facts_map)
+    assert "## 複数銘柄比較" in table
+    assert "トヨタ自動車（7203）" in table
+    assert "ソニーグループ（6758）" in table
+    assert "10.00倍" in table  # PER
+    assert "70.00/100" in table  # 総合スコア
+
+
+async def test_report_prepends_comparison_table_for_multiple_tickers() -> None:
+    facts_map = _make_multi_company_facts()
+    state = new_state("分析して", tickers=list(facts_map))
+    state["company_facts"] = facts_map
+    state["company_analyses"] = {"7203": "分析A", "6758": "分析B"}
+
+    result = await company._report(state)
+
+    answer = result["answer"]
+    assert answer.startswith("## 複数銘柄比較")
+    # 個別レポートも引き続き含まれる
+    assert "トヨタ自動車（7203）企業分析レポート" in answer
+    assert "ソニーグループ（6758）企業分析レポート" in answer
+    # reports 辞書は比較表を含まず、各銘柄の個別レポートのみ
+    assert set(result["reports"]) == {"7203", "6758"}
+    for code, facts in facts_map.items():
+        expected = company.build_report(facts, state["company_analyses"][code])
+        assert result["reports"][code] == expected
+        assert "複数銘柄比較" not in result["reports"][code]
+
+
+async def test_report_omits_comparison_table_for_single_ticker() -> None:
+    facts_map = {"7203": _make_multi_company_facts()["7203"]}
+    state = new_state("分析して", tickers=list(facts_map))
+    state["company_facts"] = facts_map
+    state["company_analyses"] = {"7203": "分析A"}
+
+    result = await company._report(state)
+
+    assert "複数銘柄比較" not in result["answer"]
+    expected = company.build_report(facts_map["7203"], "分析A")
+    assert result["answer"] == expected
+    assert result["reports"] == {"7203": expected}
+
+
+# ---------------------------------------------------------------------------
 # 企業分析（子）: ポートフォリオ/ウォッチリストの保有文脈（Issue #78）
 # ---------------------------------------------------------------------------
 
