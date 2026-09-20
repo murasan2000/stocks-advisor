@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import AsyncGenerator, Coroutine
 from contextlib import asynccontextmanager
@@ -23,6 +24,7 @@ from app.services.portfolio.service import PortfolioService
 from app.services.screener.history import fetch_candles_live_cached, synth_candles
 from app.services.screener.repository import ScreenerRepository
 from app.services.screener.service import ScreenerFilters, ScreenerService
+from app.services.watchlist.alerts_repository import AlertsRepository
 from app.services.watchlist.labels_repository import LabelsRepository
 from app.services.watchlist.repository import WatchlistRepository
 from app.services.watchlist.service import WatchlistService
@@ -40,10 +42,12 @@ from app.types.api import (
     LabelCreateRequest,
     MarketCategoryInfo,
     MarketReport,
+    RefreshIfStaleResponse,
     ScreenerMeta,
     StockHistory,
     StockRow,
     StocksResponse,
+    WatchlistAlert,
 )
 from app.types.chat import (
     Conversation,
@@ -64,6 +68,7 @@ _chat_repo = ChatRepository(settings.db_path)
 _watchlist_repo = WatchlistRepository(settings.db_path)
 _labels_repo = LabelsRepository(settings.db_path)
 _watchlist = WatchlistService(_watchlist_repo, _screener_repo, _labels_repo)
+_alerts_repo = AlertsRepository(settings.db_path)
 _holdings_repo = HoldingsRepository(settings.db_path)
 _portfolio = PortfolioService(_holdings_repo, _screener_repo)
 _market_report_repo = MarketReportRepository(settings.db_path)
@@ -89,6 +94,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
     await _chat_repo.initialize()
     await _watchlist_repo.initialize()
     await _labels_repo.initialize()
+    await _alerts_repo.initialize()
     await _holdings_repo.initialize()
     await _market_report_repo.initialize()
     await _company_report_repo.initialize()
@@ -184,8 +190,47 @@ async def screener_refresh() -> CreateJobResponse:
         # done を受け取るだけ）になるため実害はない。
         assert active is not None
         return CreateJobResponse(job_id=active.job_id, status=active.status)
-    _spawn(run_refresh_job(job_id, _job_repo, _screener))
+    _spawn(
+        run_refresh_job(
+            job_id,
+            _job_repo,
+            _screener,
+            screener_repo=_screener_repo,
+            watchlist_repo=_watchlist_repo,
+            alerts_repo=_alerts_repo,
+        )
+    )
     return CreateJobResponse(job_id=job_id, status=JobStatus.PENDING)
+
+
+# web/src/hooks/useScreener.ts の STALE_THRESHOLD_MS と揃える（issue #77）。
+_STALE_THRESHOLD_SECONDS = 24 * 60 * 60
+
+
+@app.post(
+    "/api/v1/screener/refresh-if-stale", response_model=RefreshIfStaleResponse
+)
+async def screener_refresh_if_stale() -> RefreshIfStaleResponse:
+    """スナップショットが古い場合のみ更新ジョブを起動する（issue #77）。
+
+    サーバ起点の定期更新は「スケジューリング自体はアプリの外（cron等。
+    将来クラウド移行時はCloud Scheduler/EventBridge等）に置き、アプリは
+    叩かれるだけの薄いエンドポイントを持つ」という方針（候補B）に基づく。
+    フロント起点の自動更新（issue #73, useScreener.ts）と同じ閾値・
+    重複防止ロジック（screener_refresh() の create_if_not_active()）を
+    再利用するため、新鮮なら何もせず、進行中ジョブがあっても多重作成しない。
+    """
+    last_refresh, _, _ = await _screener_repo.get_meta()
+    is_stale = (
+        last_refresh is None
+        or (time.time() - last_refresh) > _STALE_THRESHOLD_SECONDS
+    )
+    if not is_stale:
+        return RefreshIfStaleResponse(triggered=False)
+    result = await screener_refresh()
+    return RefreshIfStaleResponse(
+        triggered=True, job_id=result.job_id, status=result.status
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +262,27 @@ async def watchlist_remove(code: str) -> Response:
     """解除する（未登録でもエラーにしない）。"""
     await _watchlist.remove(code)
     return Response(status_code=204)
+
+
+@app.get("/api/v1/watchlist/alerts", response_model=list[WatchlistAlert])
+async def watchlist_alerts_list(
+    unread_only: bool = Query(default=True),
+) -> list[WatchlistAlert]:
+    """ウォッチ銘柄の価格・スコア変化アラートを新しい順で返す（issue #81）。
+
+    スナップショット更新ジョブ完了時にサーバ側で検出済みのアラートを返すのみで、
+    ここでは検出処理は行わない（run_refresh_job() 参照）。
+    """
+    if unread_only:
+        return await _alerts_repo.list_unread()
+    return await _alerts_repo.list_all()
+
+
+@app.post("/api/v1/watchlist/alerts/read-all", status_code=200)
+async def watchlist_alerts_read_all() -> Response:
+    """全アラートを既読にする。"""
+    await _alerts_repo.mark_all_read()
+    return Response(status_code=200)
 
 
 # ---------------------------------------------------------------------------

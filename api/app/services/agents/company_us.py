@@ -290,6 +290,10 @@ async def _collect_one(code: str) -> CompanyFacts:
         business_summary=summary,
         news=news,
         filings=[],  # EDINET相当のデータソースは持たない
+        # 保有/ウォッチ文脈は日本株の company.py のみ対応（Issue #78 のスコープ外）。
+        holding_quantity=None,
+        holding_avg_cost=None,
+        watched=False,
     )
 
 

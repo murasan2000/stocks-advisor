@@ -31,6 +31,9 @@ class CompanyFacts(TypedDict):
     business_summary: str  # 企業概要（live の yfinance のみ。無ければ空）
     news: list[SearchResult]  # 関連ニュース（Web検索 topic=news）
     filings: list[str]  # 直近の開示（EDINET。例: "2026-06-25 有価証券報告書"）
+    holding_quantity: float | None  # 保有数量（未保有なら None）
+    holding_avg_cost: float | None  # 取得単価（未保有なら None）
+    watched: bool  # ウォッチリスト登録済みか
 
 
 class MarketFacts(TypedDict):

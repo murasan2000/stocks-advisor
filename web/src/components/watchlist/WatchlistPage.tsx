@@ -15,9 +15,10 @@ interface Props {
   loading: boolean
   watchedCodes: Set<string>
   onToggleWatch: (code: string) => void
-  // AI企業分析の対象選択（スクリーニング画面と共通の state をそのまま使う）
+  // AI企業分析・複数銘柄比較の対象選択（スクリーニング画面と共通の state をそのまま使う）
   selected: Set<string>
   onToggleSelect: (code: string) => void
+  selectionMax?: number
   // 銘柄コード直接入力での追加（日本株コード・米国株ティッカーどちらも可）
   onAdd: (code: string) => Promise<void>
   // ラベル（issue #68）。並び順ではなく絞り込み用のタグとして扱う。
@@ -53,6 +54,7 @@ export function WatchlistPage({
   onToggleWatch,
   selected,
   onToggleSelect,
+  selectionMax,
   onAdd,
   labels,
   selectedLabelIds,
@@ -211,6 +213,7 @@ export function WatchlistPage({
               renderDetail={renderDetail}
               selected={selected}
               onToggleSelect={onToggleSelect}
+              selectionMax={selectionMax}
               renderLabels={(row) => (
                 <LabelBadges row={row} onOpenPicker={setLabelPickerCode} onDetach={onDetachLabel} />
               )}
@@ -230,6 +233,7 @@ export function WatchlistPage({
               renderDetail={renderDetail}
               selected={selected}
               onToggleSelect={onToggleSelect}
+              selectionMax={selectionMax}
               renderLabels={(row) => (
                 <LabelBadges row={row} onOpenPicker={setLabelPickerCode} onDetach={onDetachLabel} />
               )}

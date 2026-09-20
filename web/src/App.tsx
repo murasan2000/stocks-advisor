@@ -1,8 +1,9 @@
-import { Sparkles, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { GitCompareArrows, Sparkles, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AiButton } from './components/chat/AiButton'
 import { ChatModal } from './components/chat/ChatModal'
 import { ChatToast } from './components/chat/ChatToast'
+import { CompareModal } from './components/common/CompareModal'
 import { Sidebar } from './components/Sidebar'
 import { MarketPage } from './components/market/MarketPage'
 import { PortfolioPage } from './components/portfolio/PortfolioPage'
@@ -16,8 +17,12 @@ import { useMarket } from './hooks/useMarket'
 import { usePortfolio } from './hooks/usePortfolio'
 import { useScreener } from './hooks/useScreener'
 import { useWatchlist } from './hooks/useWatchlist'
+import type { StockRow } from './types/api'
 
 export type View = 'screener' | 'watchlist' | 'portfolio' | 'market'
+
+// 銘柄選択（AI企業分析・複数銘柄比較で共用）の上限数（Issue #82: 推奨は2〜3銘柄程度）
+const MAX_SELECTED = 4
 
 export default function App() {
   const chat = useChat()
@@ -62,8 +67,10 @@ export default function App() {
   const market = useMarket()
   const { loadCategories: loadMarketCategories, loadFx: loadMarketFx } = market
   const [view, setView] = useState<View>('screener')
-  // 企業分析の対象として選択中の銘柄コード
+  // 企業分析・複数銘柄比較の対象として選択中の銘柄コード（両機能で共用、上限 MAX_SELECTED）
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // 比較モーダルの開閉状態（Issue #82）
+  const [compareOpen, setCompareOpen] = useState(false)
 
   // ★状態はどちらの画面でも必要なため、起動時に一度だけ取得する
   useEffect(() => {
@@ -114,11 +121,27 @@ export default function App() {
       if (next.has(code)) {
         next.delete(code)
       } else {
+        // 上限を超える追加は無視する（比較ビューは MAX_SELECTED 銘柄までの表示を想定）
+        if (next.size >= MAX_SELECTED) return prev
         next.add(code)
       }
       return next
     })
   }
+
+  // 比較モーダル用: スクリーナー/ウォッチリストどちらの一覧に由来する銘柄でも
+  // 表示できるよう、両方のデータをコードでマージした参照を作る。
+  const stockByCode = useMemo(() => {
+    const map = new Map<string, StockRow>()
+    for (const s of stocks) map.set(s.code, s)
+    for (const r of watchlistRows) map.set(r.code, r)
+    return map
+  }, [stocks, watchlistRows])
+
+  const compareRows = useMemo(
+    () => [...selected].map((code) => stockByCode.get(code)).filter((r): r is StockRow => r != null),
+    [selected, stockByCode],
+  )
 
   const handleAnalyze = () => {
     // 送信中は受け付けない（選択を消したのに分析が走らない事故を防ぐ）
@@ -140,6 +163,7 @@ export default function App() {
           onToggleWatch={toggleWatch}
           selected={selected}
           onToggleSelect={toggleSelect}
+          selectionMax={MAX_SELECTED}
           onAdd={addWatch}
           labels={watchlistLabels}
           selectedLabelIds={selectedWatchlistLabelIds}
@@ -207,6 +231,7 @@ export default function App() {
                 loading={loading}
                 selected={selected}
                 onToggleSelect={toggleSelect}
+                selectionMax={MAX_SELECTED}
                 watchedCodes={watchedCodes}
                 onToggleWatch={toggleWatch}
               />
@@ -226,6 +251,14 @@ export default function App() {
           </span>
           <button
             type="button"
+            className="select-action-compare"
+            onClick={() => setCompareOpen(true)}
+          >
+            <GitCompareArrows size={15} />
+            比較
+          </button>
+          <button
+            type="button"
             className="select-action-analyze"
             onClick={handleAnalyze}
             disabled={chat.busy}
@@ -243,6 +276,10 @@ export default function App() {
             <X size={16} />
           </button>
         </div>
+      ) : null}
+
+      {compareOpen ? (
+        <CompareModal rows={compareRows} onClose={() => setCompareOpen(false)} />
       ) : null}
 
       {chat.notice && !chat.isOpen ? (
