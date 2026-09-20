@@ -15,8 +15,11 @@ from app.services.agents.runner import run_agent_job
 from app.services.agents.state import MarketFacts
 from app.services.jobs.repository import JobRepository
 from app.services.market.report_repository import MarketReportRepository
+from app.services.portfolio.repository import HoldingsRepository
+from app.services.watchlist.repository import WatchlistRepository
 from app.types.jobs import AgentPhase, JobStatus
 from app.utils.dates import today_jst
+from app.utils.settings import settings
 
 
 async def _fake_llm(
@@ -37,7 +40,13 @@ def _clear_cache() -> None:
 
 def test_market_categories_catalog_has_expected_ids() -> None:
     known = {c["id"] for c in market.MARKET_CATEGORIES}
-    assert known == {"jp_stocks", "us_stocks", "fx", "semiconductor"}
+    assert known == {
+        "jp_stocks",
+        "us_stocks",
+        "fx",
+        "semiconductor",
+        "my_portfolio",
+    }
 
 
 async def test_market_agent_reports_requested_category(
@@ -76,6 +85,77 @@ async def test_market_agent_defaults_to_all_categories_when_unknown(
     assert "# 為替市況" in answer
     assert "# 半導体セクター" in answer
     assert "# 米国株市況" in answer
+    # my_portfolio は動的カテゴリのため「未指定 → 全カテゴリ」には含めない
+    assert "# マイポートフォリオ" not in answer
+
+
+async def test_select_categories_default_excludes_my_portfolio() -> None:
+    """未指定時のデフォルト対象一覧に my_portfolio が含まれない。"""
+    result = await market._select_categories(market.new_state("", categories=None))
+    assert "my_portfolio" not in result["market_categories"]
+    assert set(result["market_categories"]) == {
+        "jp_stocks",
+        "us_stocks",
+        "fx",
+        "semiconductor",
+    }
+
+
+async def test_my_portfolio_category_builds_query_from_watchlist_and_holdings(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ウォッチ・保有銘柄がある場合、それらの銘柄名を含むクエリで検索する。"""
+    db_path = str(tmp_path / "app.db")
+    monkeypatch.setattr(settings, "db_path", db_path)
+    monkeypatch.setattr(market, "invoke_llm", _fake_llm)
+
+    holdings_repo = HoldingsRepository(db_path)
+    await holdings_repo.initialize()
+    await holdings_repo.upsert("7203", 100, 2000.0)
+
+    watchlist_repo = WatchlistRepository(db_path)
+    await watchlist_repo.initialize()
+    await watchlist_repo.add("6758")
+
+    queries: list[str] = []
+
+    async def _capturing_search(query: str, **kwargs: Any) -> list[dict[str, str]]:
+        queries.append(query)
+        return [{"title": "銘柄ニュース", "url": "https://e.com/1", "snippet": ""}]
+
+    monkeypatch.setattr(market, "search_web", _capturing_search)
+
+    answer = await market.run(categories=["my_portfolio"])
+
+    assert "# マイポートフォリオ" in answer
+    assert len(queries) == 1
+    assert "トヨタ自動車" in queries[0]
+    assert "7203" in queries[0]
+    assert "ソニーグループ" in queries[0]
+    assert "6758" in queries[0]
+
+
+async def test_my_portfolio_category_empty_when_no_watchlist_or_holdings(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ウォッチ・保有銘柄が無い場合、検索を実行せず空扱いのレポートになる。"""
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "missing.db"))
+    monkeypatch.setattr(market, "invoke_llm", _fake_llm)
+
+    calls = 0
+
+    async def _counting_search(query: str, **kwargs: Any) -> list[Any]:
+        nonlocal calls
+        calls += 1
+        return []
+
+    monkeypatch.setattr(market, "search_web", _counting_search)
+
+    answer = await market.run(categories=["my_portfolio"])
+
+    assert calls == 0  # 検索は実行されない
+    assert "# マイポートフォリオ" in answer
+    assert "ウォッチリスト・保有銘柄が未登録です" in answer
 
 
 async def test_market_agent_news_items_link_to_source(
