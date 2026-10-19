@@ -1,0 +1,64 @@
+# ローカル開発用の compose 定義。
+#
+#   docker compose up --build
+#
+#   web  http://localhost:5180
+#   api  http://localhost:8100/docs
+#
+# 別アプリが 5173 / 8000 / 5432 を使っているため、ホスト側ポートはずらしている
+# （WEB_PORT / API_PORT で変更可）。コンテナ内のポートは素の開発時と同じ 5173 / 8000。
+#
+# api / web はソースをバインドマウントしてホットリロードする。本番向けイメージは
+# 各 Dockerfile の runtime / serve stage を使う想定で、この compose は開発用。
+name: stocks-advisor
+
+services:
+  api:
+    build:
+      context: ./api
+      target: dev
+    restart: unless-stopped
+    env_file:
+      # 素の開発時と同じ api/.env を読む（無くても起動できるよう任意扱い）。
+      - path: api/.env
+        required: false
+    environment:
+      # SQLite はホストの db/ を共有する（compose 外で起動した api とデータが同じになる）。
+      DB_PATH: /app/db/stock_advisor.db
+      # macOS のバインドマウントは inotify が届かない環境があるため、ポーリングで監視する。
+      WATCHFILES_FORCE_POLLING: "true"
+    ports:
+      - "${API_PORT:-8100}:8000"
+    volumes:
+      - ./api/app:/app/app
+      - ./api/tests:/app/tests
+      - ./db:/app/db
+    extra_hosts:
+      # Ollama / Langfuse をホストで動かす前提の既定値（host.docker.internal）を
+      # Docker Desktop 以外（colima 等）でも解決できるようにする。
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  web:
+    build:
+      context: ./web
+      target: dev
+    restart: unless-stopped
+    environment:
+      # Vite の dev サーバが /api をこの向き先へプロキシする。
+      VITE_API_PROXY_TARGET: http://api:8000
+    ports:
+      - "${WEB_PORT:-5180}:5173"
+    volumes:
+      - ./web:/web
+      # node_modules はコンテナ側（Linux ビルド済み）を使う。ホストのものを被せると
+      # esbuild / rolldown 等のネイティブバイナリが合わずに起動しなくなる。
+      - /web/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
