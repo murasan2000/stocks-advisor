@@ -262,6 +262,28 @@ def build_report(facts: CompanyFacts, analysis: str) -> str:
     return "\n".join(lines)
 
 
+def build_comparison_table(facts_map: dict[str, CompanyFacts]) -> str:
+    """複数銘柄の指標比較表を組み立てる（純粋関数。issue #79）。
+
+    2銘柄以上が対象の場合のみ _report ノードから呼ばれる。
+    """
+    lines = [
+        "## 複数銘柄比較",
+        "",
+        "| 銘柄 | 株価 | PER | PBR | 配当利回り | ROE | 総合スコア |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for code, facts in facts_map.items():
+        m = facts["metrics"]
+        lines.append(
+            f"| {facts['name']}（{code}） | {_fmt(m.get('price'), '円')}"
+            f" | {_fmt(m.get('per'), '倍')} | {_fmt(m.get('pbr'), '倍')}"
+            f" | {_fmt(m.get('dividend_yield'), '%')} | {_fmt(m.get('roe'), '%')}"
+            f" | {_fmt(m.get('score'))}/100 |"
+        )
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # ノード
 # ---------------------------------------------------------------------------
@@ -399,6 +421,10 @@ async def _report(state: AgentState) -> dict[str, Any]:
         for code, facts in facts_map.items()
     }
     answer = "\n\n---\n\n".join(reports[code] for code in facts_map)
+    # 複数銘柄が対象の場合のみ、横並び比較表を先頭に追加する（issue #79）。
+    # reports（DB永続化・カレンダー再表示に使う個別レポート）は変更しない。
+    if len(facts_map) >= 2:
+        answer = build_comparison_table(facts_map) + "\n\n---\n\n" + answer
     return {"reports": reports, "answer": answer}
 
 

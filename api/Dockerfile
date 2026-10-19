@@ -1,3 +1,25 @@
+# ---- dev ----
+# docker compose（ローカル開発）用。dev 依存込みで入れ、ソースはバインドマウントして
+# uvicorn --reload でホットリロードする。.venv はマウント領域の外（/opt/venv）に置き、
+# ホスト側 api/.venv（macOS 用バイナリ）の有無に影響されないようにする。
+FROM python:3.13-slim AS dev
+
+WORKDIR /app
+
+RUN pip install uv --no-cache-dir
+
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/app"
+ENV PYTHONUNBUFFERED=1
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --group dev --no-install-project
+
+EXPOSE 8000
+
+CMD ["uvicorn", "app.servers.api:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "app"]
+
 # ---- builder ----
 FROM python:3.13-slim AS builder
 
@@ -24,7 +46,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
 # コンテナ内では /app/db（named volume）に永続化する
-ENV DB_PATH="/app/db/stocks_advisor.db"
+ENV DB_PATH="/app/db/stock_advisor.db"
 
 RUN mkdir -p /app/db && chown -R appuser:appuser /app
 

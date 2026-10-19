@@ -39,6 +39,15 @@ npm run lint    # eslint
 npm run dev     # 開発サーバ（:5173、/api を :8000 にプロキシ）
 ```
 
+Docker でまとめて起動する場合（リポジトリ直下で実行）:
+
+```bash
+docker compose up --build   # web http://localhost:5180 / api http://localhost:8100/docs
+```
+
+- 別アプリと衝突しないよう、ホスト側ポートは 5180 / 8100 にずらしている
+  （`WEB_PORT` / `API_PORT` で変更可）。ソースはバインドマウントでホットリロード、
+  SQLite はホストの `db/` を共有、環境変数は `api/.env` を読む。
 - 開発時は `EXTERNAL_API_MODE=mock` で合成データを使い、ネットワーク非依存で動作確認する。
 - テストは必ず mock 前提（`.env` が live でもテスト内で mock を明示）。
 

@@ -1,10 +1,22 @@
-# ---- build ----
-FROM node:22-slim AS build
+# ---- deps ----
+FROM node:22-slim AS deps
 
 WORKDIR /web
 
 COPY package.json package-lock.json ./
 RUN npm ci
+
+# ---- dev ----
+# docker compose（ローカル開発）用。ソースはバインドマウントし、node_modules は
+# このイメージ内（Linux 向けネイティブバイナリ）のものを使う。
+FROM deps AS dev
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev"]
+
+# ---- build ----
+FROM deps AS build
 
 COPY . .
 RUN npm run build
